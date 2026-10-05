@@ -1,0 +1,78 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+// We use the gen-schema script to inject the correct datasource (sqlite or postgres)
+
+enum TransactionStatus {
+  PENDING
+  SUPPLIER_OK
+  VENDING_RETRY
+  COMPLETED
+  FAILED
+  NEEDS_REVIEW
+  RECONCILING
+}
+
+enum LogDirection {
+  SUPPLIER_REQ
+  SUPPLIER_RES
+  VENDING_REQ
+  VENDING_RES
+  STATE_CHANGE
+}
+
+model Transaction {
+  id                  String            @id @default(cuid())
+  transactionId       String            @unique
+  supplierCode        String
+  supplierProductId   String
+  vlProductId         String
+  productName         String?
+  qty                 Int
+  unitPrice           Float?
+  totalPrice          Float?
+  status              TransactionStatus @default(PENDING)
+  supplierOrderId     String?
+  deliveredKeysEnc    String?           // AES-GCM encrypted
+  emails              String?           // Comma separated if multiple
+  balanceBefore       Float?
+  balanceAfter        Float?
+  deliveryAttempts    Int               @default(0)
+  lastError           String?
+  confirmToken        String?
+  confirmExpiresAt    DateTime?
+  telegramChatId      String
+  
+  logs                TransactionLog[]
+
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+
+  @@index([status, updatedAt])
+}
+
+model TransactionLog {
+  id            String       @id @default(cuid())
+  transactionId String
+  transaction   Transaction  @relation(fields: [transactionId], references: [id])
+  direction     LogDirection
+  httpStatus    Int?
+  payload       String       // Store as String since SQLite doesn't have native JSON
+  durationMs    Int?
+  
+  createdAt     DateTime     @default(now())
+}
+
+model ProcessedUpdate {
+  updateId      Int      @id
+  createdAt     DateTime @default(now())
+}
+
+model ProductMapping {
+  vlProductId         String  @id
+  supplierCode        String
+  supplierProductId   String
+  displayName         String?
+  enabled             Boolean @default(true)
+}

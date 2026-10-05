@@ -1,0 +1,90 @@
+version: '3.8'
+
+services:
+  bridge-api:
+    build: .
+    restart: unless-stopped
+    command: sh -c "npx prisma migrate deploy --schema=prisma/postgres/schema.prisma && node dist/server.js"
+    env_file: .env
+    environment:
+      - DATABASE_PROVIDER=postgres
+      - DATABASE_URL=postgresql://bridge_user:bridge_pass@postgres:5432/bridge?schema=public
+      - REDIS_URL=redis://redis:6379
+    ports:
+      - "127.0.0.1:3000:3000" # Expose only to localhost for reverse proxy (Caddy/Nginx)
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    networks:
+      - bridge_net
+
+  bridge-worker:
+    build: .
+    restart: unless-stopped
+    command: node dist/worker.js
+    env_file: .env
+    environment:
+      - DATABASE_PROVIDER=postgres
+      - DATABASE_URL=postgresql://bridge_user:bridge_pass@postgres:5432/bridge?schema=public
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    networks:
+      - bridge_net
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: bridge_user
+      POSTGRES_PASSWORD: bridge_pass
+      POSTGRES_DB: bridge
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bridge_user -d bridge"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - bridge_net
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory-policy noeviction
+    volumes:
+      - redisdata:/data
+    networks:
+      - bridge_net
+
+  db-backup:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: bridge_user
+      POSTGRES_PASSWORD: bridge_pass
+      POSTGRES_DB: bridge
+      POSTGRES_HOST: postgres
+    volumes:
+      - ./backups:/backups
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # A simple crond that runs pg_dump daily and deletes backups older than 7 days
+    command: >
+      sh -c 'echo "0 3 * * * pg_dump -h $$POSTGRES_HOST -U $$POSTGRES_USER -d $$POSTGRES_DB -Fc > /backups/db-$$(date +\%Y\%m\%d).dump && find /backups/ -type f -mtime +7 -name \"*.dump\" -delete" > /etc/crontabs/root && crond -f'
+    networks:
+      - bridge_net
+
+networks:
+  bridge_net:
+
+volumes:
+  pgdata:
+  redisdata:
