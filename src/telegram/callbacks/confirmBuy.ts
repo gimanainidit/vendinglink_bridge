@@ -1,6 +1,7 @@
 import { MyContext } from '../middleware/session';
 import { logger } from '../../lib/logger';
 import { createPendingTransaction } from '../../services/orchestrator';
+import { supplierOrderQueue } from '../../queues/queues';
 
 export const handleCallbackQuery = async (ctx: MyContext) => {
   if (!ctx.callbackQuery || !('data' in ctx.callbackQuery)) return;
@@ -47,7 +48,7 @@ export const handleCallbackQuery = async (ctx: MyContext) => {
           ctx.from!.id.toString()
         );
         
-        // In Phase 3: await queues.supplierOrder.add(tx.transactionId, { txId: tx.id })
+        await supplierOrderQueue.add('order', { txId: tx.id }, { jobId: tx.transactionId });
         await ctx.reply(`✅ Transaction created (TX: ${tx.transactionId}). Enqueueing...`);
       } catch (err: any) {
         await ctx.reply(`❌ Failed to create transaction: ${err.message}`);
