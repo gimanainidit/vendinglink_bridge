@@ -4,7 +4,7 @@ services:
   bridge-api:
     build: .
     restart: unless-stopped
-    command: sh -c "npx prisma migrate deploy --schema=prisma/postgres/schema.prisma && node dist/server.js"
+    command: sh -c "npx prisma db push --schema=prisma/postgres/schema.prisma && node dist/server.js"
     env_file: .env
     environment:
       - DATABASE_PROVIDER=postgres
@@ -47,7 +47,7 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U bridge_user -d bridge"]
+      test: [ "CMD-SHELL", "pg_isready -U bridge_user -d bridge" ]
       interval: 5s
       timeout: 5s
       retries: 5

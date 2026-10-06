@@ -69,9 +69,20 @@ export const appendLog = async (
     redactedPayload = p;
   }
 
+  // Note: the `transactionId` passed here is the semantic BRG-... ID.
+  // The Prisma relation expects the internal CUID (`id`).
+  const tx = await prisma.transaction.findUnique({
+    where: { transactionId }
+  });
+
+  if (!tx) {
+    logger.warn(`Could not find transaction ${transactionId} to append log`);
+    return;
+  }
+
   return prisma.transactionLog.create({
     data: {
-      transactionId,
+      transactionId: tx.id,
       direction,
       httpStatus,
       durationMs,
