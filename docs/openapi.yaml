@@ -1,0 +1,140 @@
+openapi: 3.1.0
+info:
+  title: VendingLink Bridge Ingress Webhook API
+  version: 1.0.0
+  description: |
+    Spesifikasi OpenAPI untuk endpoint penerima data dari **VendingLink Bridge**.
+    
+    Endpoint ini harus diimplementasikan oleh sistem utama VendingLink untuk menerima 
+    top-up stok / license keys hasil pembelian otomatis dari supplier.
+servers:
+  - url: https://vendinglink.txsiber.online
+    description: Production VendingLink Server
+
+paths:
+  /api/bridge/webhook/stock/topup:
+    post:
+      summary: Receive Topup Stock & License Keys
+      description: |
+        Menerima lisensi/serial/akun yang telah berhasil dibeli oleh Bridge Bot dari supplier.
+        
+        **Wajib**: Implementasikan verifikasi idempotency menggunakan header `Idempotency-Key` 
+        agar retry dari worker Bridge tidak menduplikasi penambahan stok.
+      operationId: receiveStockTopup
+      security:
+        - BridgeBearerAuth: []
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          description: Unique Transaction ID (format `BRG-YYYYMMDD-XXXXXX`) untuk mencegah duplikasi.
+          schema:
+            type: string
+            example: "BRG-20261006-EP1IC0"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StockTopupPayload'
+      responses:
+        '200':
+          description: Berhasil memproses dan menyimpan stok ke inventaris VendingLink.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockTopupSuccessResponse'
+        '409':
+          description: |
+            **Idempotent replay**: Transaksi ini sudah pernah diproses sebelumnya. 
+            Bridge menganggap response 409 sebagai sukses dan tidak akan mengulang pengiriman.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockTopupSuccessResponse'
+        '400':
+          description: Bad Request (Payload tidak valid / format salah / produk tidak dikenal). Bridge tidak akan melakukan auto-retry (ditandai `NEEDS_REVIEW`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized (Token Bearer salah atau tidak disertakan).
+        '500':
+          description: Internal Server Error di VendingLink. Bridge akan melakukan retry otomatis berkala (exponential backoff).
+
+components:
+  securitySchemes:
+    BridgeBearerAuth:
+      type: http
+      scheme: bearer
+      description: Secret key yang disepakati bersama (`BRIDGE_SECRET_KEY` di file `.env`).
+
+  schemas:
+    StockTopupPayload:
+      type: object
+      required:
+        - transaction_id
+        - product_id
+        - supplier_code
+        - supplier_product_id
+        - added_qty
+        - items
+        - source
+      properties:
+        transaction_id:
+          type: string
+          description: ID transaksi unik dari Bridge
+          example: "BRG-20261006-EP1IC0"
+        product_id:
+          type: string
+          description: ID produk di sistem VendingLink
+          example: "RZK-loc_test1"
+        supplier_code:
+          type: string
+          description: Kode supplier asal
+          example: "RZK"
+        supplier_product_id:
+          type: string
+          description: SKU / ID produk asli di sisi supplier
+          example: "loc_test1"
+        added_qty:
+          type: integer
+          minimum: 1
+          description: Jumlah item yang ditambahkan
+          example: 1
+        items:
+          type: array
+          items:
+            type: string
+          description: Daftar lisensi, serial number, atau akun hasil pembelian
+          example:
+            - "TEST-LICENSE-KEY-1234-ABCD"
+        source:
+          type: string
+          enum: [BRIDGE_BOT]
+          example: "BRIDGE_BOT"
+
+    StockTopupSuccessResponse:
+      type: object
+      required:
+        - success
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: "Stock successfully updated"
+        current_stock:
+          type: integer
+          example: 15
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
+          example: "Product RZK-loc_test1 not found in catalog"

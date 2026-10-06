@@ -1,4 +1,6 @@
 import express from 'express';
+import path from 'path';
+import fs from 'fs';
 import pinoHttp from 'pino-http';
 import { logger } from './lib/logger';
 import { bot } from './telegram/bot';
@@ -20,6 +22,38 @@ export const createApp = () => {
 
   app.get('/health', (req, res) => {
     res.status(200).json({ status: 'ok' });
+  });
+
+  // Serve raw OpenAPI spec
+  app.get('/docs/openapi.yaml', (req, res) => {
+    const yamlPath = path.resolve(process.cwd(), 'docs/openapi.yaml');
+    if (fs.existsSync(yamlPath)) {
+      res.setHeader('Content-Type', 'text/yaml');
+      res.sendFile(yamlPath);
+    } else {
+      res.status(404).send('Spec not found');
+    }
+  });
+
+  // Serve interactive Redoc UI
+  app.get('/docs', (req, res) => {
+    res.setHeader('Content-Type', 'text/html');
+    res.send(`<!DOCTYPE html>
+<html>
+  <head>
+    <title>VendingLink Bridge Ingress API Docs</title>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link href="https://fonts.googleapis.com/css?family=Montserrat:300,400,700|Roboto:300,400,700" rel="stylesheet">
+    <style>
+      body { margin: 0; padding: 0; }
+    </style>
+  </head>
+  <body>
+    <redoc spec-url="/docs/openapi.yaml" expand-responses="200,409"></redoc>
+    <script src="https://cdn.redoc.ly/redoc/latest/bundles/redoc.standalone.js"></script>
+  </body>
+</html>`);
   });
 
   // Telegram webhook will be mounted here
