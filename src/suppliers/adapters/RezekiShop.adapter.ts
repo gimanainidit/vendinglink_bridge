@@ -33,8 +33,8 @@ export class RezekiShopAdapter implements ISupplierAdapter {
       const { data } = await this.client.get('/v1/products', {
         params: { search, lang: 'id' },
       });
-      const rawProducts = Array.isArray(data) 
-        ? data 
+      const rawProducts = Array.isArray(data)
+        ? data
         : (data.products || data.data || []);
 
       return rawProducts.map((p: any) => ({
@@ -77,7 +77,7 @@ export class RezekiShopAdapter implements ISupplierAdapter {
       product_id: params.productId,
       quantity: params.qty,
     };
-    
+
     if (params.emails && params.emails.length > 0) {
       if (params.qty === 1) {
         payload.email = params.emails[0];
@@ -97,7 +97,7 @@ export class RezekiShopAdapter implements ISupplierAdapter {
 
       let deliveredKeys = data.delivered_keys || (data.delivered_key ? [data.delivered_key] : []);
       if (deliveredKeys.length === 0) {
-        deliveredKeys = ["DIRECT_TOPUP_" + params.transactionId];
+        deliveredKeys = ["HUBUNGI_ADMIN:DIRECT_TOPUP_" + params.transactionId];
       }
 
       return {
@@ -125,7 +125,7 @@ export class RezekiShopAdapter implements ISupplierAdapter {
           throw new SupplierFailedRefundedError(`Failed/Refunded (${status}): ${JSON.stringify(resData)}`);
         }
       }
-      
+
       throw new SupplierUnknownOutcomeError(`Unknown outcome (Timeout or Network Error): ${err.message}`);
     }
   }
@@ -134,7 +134,7 @@ export class RezekiShopAdapter implements ISupplierAdapter {
     try {
       const { data } = await this.client.get('/v1/orders');
       const orders = Array.isArray(data) ? data : data.data || [];
-      
+
       // Look for an order created after 'since' matching productId and qty
       const found = orders.find((o: any) => {
         const created = new Date(o.created_at || o.date);
