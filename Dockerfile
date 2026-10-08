@@ -28,6 +28,9 @@ COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/scripts ./scripts
 COPY --from=builder /app/docs ./docs
 
+# Re-generate the prisma client in the runtime node_modules (since npm ci wipes it)
+RUN npx prisma generate --schema=prisma/postgres/schema.prisma
+
 # Setup a non-root user
 USER node
 
