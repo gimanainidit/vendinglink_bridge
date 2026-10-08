@@ -70,9 +70,11 @@ model ProcessedUpdate {
 }
 
 model ProductMapping {
-  vlProductId         String  @id
+  vlProductId         String
   supplierCode        String
   supplierProductId   String
   displayName         String?
   enabled             Boolean @default(true)
+
+  @@id([supplierCode, supplierProductId])
 }

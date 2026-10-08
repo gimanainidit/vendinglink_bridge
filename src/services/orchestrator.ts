@@ -3,6 +3,7 @@ import { createTransaction, updateTransactionStatus } from './transactionService
 import { encryptKeys } from '../lib/crypto';
 import { logger } from '../lib/logger';
 import { env } from '../config/env';
+import { prisma } from '../db';
 
 // This function will be called by the Telegram callback directly (to enqueue) 
 // or by the Queue worker to execute.
@@ -21,8 +22,8 @@ export const createPendingTransaction = async (
 
   const transactionId = `BRG-${new Date().toISOString().replace(/\D/g, '').slice(0, 8)}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
   
-  // Format VL ID
-  const vlProductId = `${adapter.code}-${productId}`;
+  // Bridge is now dumb. VendingLink handles mapping.
+  const vlProductId = "[UNKNOWN]";
 
   const tx = await createTransaction({
     transactionId,
