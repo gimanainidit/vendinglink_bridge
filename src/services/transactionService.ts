@@ -46,6 +46,33 @@ export const updateTransactionStatus = async (
   return prisma.transaction.findUnique({ where: { id } });
 };
 
+const deepRedact = (obj: any): any => {
+  if (obj === null || typeof obj !== 'object') {
+    return obj;
+  }
+
+  if (Array.isArray(obj)) {
+    return obj.map(item => deepRedact(item));
+  }
+
+  const result: any = {};
+  for (const [key, value] of Object.entries(obj)) {
+    const lowerKey = key.toLowerCase();
+    if (
+      key === 'delivered_key' ||
+      key === 'delivered_keys' ||
+      key === 'items' ||
+      lowerKey === 'authorization' ||
+      lowerKey === 'x-api-key'
+    ) {
+      result[key] = '[REDACTED]';
+    } else {
+      result[key] = deepRedact(value);
+    }
+  }
+  return result;
+};
+
 export const appendLog = async (
   transactionId: string,
   direction: LogDirection,
@@ -53,21 +80,7 @@ export const appendLog = async (
   httpStatus?: number,
   durationMs?: number
 ) => {
-  let redactedPayload = payload;
-  
-  // Basic payload redaction before storing stringified JSON
-  if (payload && typeof payload === 'object') {
-    const p = { ...payload };
-    if (p.headers) {
-      if (p.headers['authorization']) p.headers['authorization'] = '[REDACTED]';
-      if (p.headers['x-api-key']) p.headers['x-api-key'] = '[REDACTED]';
-    }
-    if (p.data) {
-      if (p.data.delivered_key) p.data.delivered_key = '[REDACTED]';
-      if (p.data.delivered_keys) p.data.delivered_keys = '[REDACTED]';
-    }
-    redactedPayload = p;
-  }
+  const redactedPayload = deepRedact(payload);
 
   // Note: the `transactionId` passed here is the semantic BRG-... ID.
   // The Prisma relation expects the internal CUID (`id`).
