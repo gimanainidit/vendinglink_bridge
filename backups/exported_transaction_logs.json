@@ -1,0 +1,521 @@
+[
+  {
+    "id": "cmuz0tt860001nfsogjb2x2m6",
+    "bridgeTxId": "BRG-20261008-H4JOVE",
+    "direction": "SUPPLIER_REQ",
+    "httpStatus": null,
+    "durationMs": null,
+    "createdAt": "2026-10-08T04:13:07.254Z",
+    "payload": {
+      "product_id": "loc_test1",
+      "quantity": 2
+    }
+  },
+  {
+    "id": "cmuz0tukx0003nfso292y4o70",
+    "bridgeTxId": "BRG-20261008-H4JOVE",
+    "direction": "SUPPLIER_RES",
+    "httpStatus": 200,
+    "durationMs": 1757,
+    "createdAt": "2026-10-08T04:13:09.010Z",
+    "payload": {
+      "code": 200,
+      "success": true,
+      "order_id": 2916,
+      "seller_order_id": "loc_2916",
+      "product_id": "loc_test1",
+      "product_name": "Test Api product",
+      "quantity": 2,
+      "price_per_unit": 1,
+      "total_price": 2,
+      "status": "delivered",
+      "delivered_key": "[REDACTED]",
+      "delivered_keys": "[REDACTED]",
+      "is_activation": false,
+      "activation": {},
+      "balance": {
+        "balance_before": 1893,
+        "balance_deducted": 2,
+        "balance_refunded": 0,
+        "balance_after": 1891
+      }
+    }
+  },
+  {
+    "id": "cmuz0tvv50005nfsovrtqtrlk",
+    "bridgeTxId": "BRG-20261008-H4JOVE",
+    "direction": "VENDING_REQ",
+    "httpStatus": null,
+    "durationMs": null,
+    "createdAt": "2026-10-08T04:13:10.674Z",
+    "payload": {
+      "transaction_id": "BRG-20261008-H4JOVE",
+      "product_id": "RZK-loc_test1",
+      "supplier_code": "RZK",
+      "supplier_product_id": "loc_test1",
+      "added_qty": 2,
+      "items": "[REDACTED]",
+      "source": "BRIDGE_BOT"
+    }
+  },
+  {
+    "id": "cmuz0tw9l0007nfsoy96afzyd",
+    "bridgeTxId": "BRG-20261008-H4JOVE",
+    "direction": "VENDING_RES",
+    "httpStatus": 201,
+    "durationMs": 521,
+    "createdAt": "2026-10-08T04:13:11.194Z",
+    "payload": {
+      "status": 201,
+      "message": "Top-up successful",
+      "transaction_id": "BRG-20261008-H4JOVE",
+      "product_id": "cmuz0tw810001dzdncmjj3e2m",
+      "inserted": 2,
+      "skipped": 0
+    }
+  },
+  {
+    "id": "cmuz1gll20009nfso3yuiq7sc",
+    "bridgeTxId": "BRG-20261008-LYILNG",
+    "direction": "SUPPLIER_REQ",
+    "httpStatus": null,
+    "durationMs": null,
+    "createdAt": "2026-10-08T04:30:50.439Z",
+    "payload": {
+      "product_id": "loc_test1",
+      "quantity": 5
+    }
+  },
+  {
+    "id": "cmuz1gmhg000bnfsohoxx378i",
+    "bridgeTxId": "BRG-20261008-LYILNG",
+    "direction": "SUPPLIER_RES",
+    "httpStatus": 200,
+    "durationMs": 1166,
+    "createdAt": "2026-10-08T04:30:51.604Z",
+    "payload": {
+      "code": 200,
+      "success": true,
+      "order_id": 2917,
+      "seller_order_id": "loc_2917",
+      "product_id": "loc_test1",
+      "product_name": "Test Api product",
+      "quantity": 5,
+      "price_per_unit": 1,
+      "total_price": 5,
+      "status": "delivered",
+      "delivered_key": "[REDACTED]",
+      "delivered_keys": "[REDACTED]",
+      "is_activation": false,
+      "activation": {},
+      "balance": {
+        "balance_before": 1891,
+        "balance_deducted": 5,
+        "balance_refunded": 0,
+        "balance_after": 1886
+      }
+    }
+  },
+  {
+    "id": "cmuz1gnsd000dnfsop36ir494",
+    "bridgeTxId": "BRG-20261008-LYILNG",
+    "direction": "VENDING_REQ",
+    "httpStatus": null,
+    "durationMs": null,
+    "createdAt": "2026-10-08T04:30:53.293Z",
+    "payload": {
+      "transaction_id": "BRG-20261008-LYILNG",
+      "product_id": "RZK-loc_test1",
+      "supplier_code": "RZK",
+      "supplier_product_id": "loc_test1",
+      "added_qty": 5,
+      "items": "[REDACTED]",
+      "source": "BRIDGE_BOT"
+    }
+  },
+  {
+    "id": "cmuz1gnzf000fnfsomwbdfxse",
+    "bridgeTxId": "BRG-20261008-LYILNG",
+    "direction": "VENDING_RES",
+    "httpStatus": 201,
+    "durationMs": 255,
+    "createdAt": "2026-10-08T04:30:53.547Z",
+    "payload": {
+      "status": 201,
+      "message": "All items already exist",
+      "inserted": 0,
+      "skipped": 5
+    }
+  },
+  {
+    "id": "cmuz2cil0000hnfsoccd68v22",
+    "bridgeTxId": "BRG-20261008-XPQHK5",
+    "direction": "SUPPLIER_REQ",
+    "httpStatus": null,
+    "durationMs": null,
+    "createdAt": "2026-10-08T04:55:39.540Z",
+    "payload": {
+      "product_id": "loc_test1",
+      "quantity": 1
+    }
+  },
+  {
+    "id": "cmuz2cji7000jnfso4tr3hv7k",
+    "bridgeTxId": "BRG-20261008-XPQHK5",
+    "direction": "SUPPLIER_RES",
+    "httpStatus": 200,
+    "durationMs": 1195,
+    "createdAt": "2026-10-08T04:55:40.735Z",
+    "payload": {
+      "code": 200,
+      "success": true,
+      "order_id": 2922,
+      "seller_order_id": "loc_2922",
+      "product_id": "loc_test1",
+      "product_name": "Test Api product",
+      "quantity": 1,
+      "price_per_unit": 1,
+      "total_price": 1,
+      "status": "delivered",
+      "delivered_key": "[REDACTED]",
+      "delivered_keys": "[REDACTED]",
+      "is_activation": false,
+      "activation": {},
+      "balance": {
+        "balance_before": 1886,
+        "balance_deducted": 1,
+        "balance_refunded": 0,
+        "balance_after": 1885
+      }
+    }
+  },
+  {
+    "id": "cmuz2cks2000lnfsog1afe4os",
+    "bridgeTxId": "BRG-20261008-XPQHK5",
+    "direction": "VENDING_REQ",
+    "httpStatus": null,
+    "durationMs": null,
+    "createdAt": "2026-10-08T04:55:42.386Z",
+    "payload": {
+      "transaction_id": "BRG-20261008-XPQHK5",
+      "product_id": "RZK-loc_test1",
+      "supplier_code": "RZK",
+      "supplier_product_id": "loc_test1",
+      "added_qty": 1,
+      "items": "[REDACTED]",
+      "source": "BRIDGE_BOT"
+    }
+  },
+  {
+    "id": "cmuz2ckue000nnfsolkzlwkvx",
+    "bridgeTxId": "BRG-20261008-XPQHK5",
+    "direction": "VENDING_RES",
+    "httpStatus": 201,
+    "durationMs": 86,
+    "createdAt": "2026-10-08T04:55:42.470Z",
+    "payload": {
+      "status": 201,
+      "message": "All items already exist",
+      "inserted": 0,
+      "skipped": 1
+    }
+  },
+  {
+    "id": "cmuz2ep5w000pnfsodso001n2",
+    "bridgeTxId": "BRG-20261008-EYB3OI",
+    "direction": "SUPPLIER_REQ",
+    "httpStatus": null,
+    "durationMs": null,
+    "createdAt": "2026-10-08T04:57:21.380Z",
+    "payload": {
+      "product_id": "loc_test1",
+      "quantity": 1
+    }
+  },
+  {
+    "id": "cmuz2eqtz000rnfso2zwfzjuf",
+    "bridgeTxId": "BRG-20261008-EYB3OI",
+    "direction": "SUPPLIER_RES",
+    "httpStatus": 200,
+    "durationMs": 2164,
+    "createdAt": "2026-10-08T04:57:23.543Z",
+    "payload": {
+      "code": 200,
+      "success": true,
+      "order_id": 2923,
+      "seller_order_id": "loc_2923",
+      "product_id": "loc_test1",
+      "product_name": "Test Api product",
+      "quantity": 1,
+      "price_per_unit": 1,
+      "total_price": 1,
+      "status": "delivered",
+      "delivered_key": "[REDACTED]",
+      "delivered_keys": "[REDACTED]",
+      "is_activation": false,
+      "activation": {},
+      "balance": {
+        "balance_before": 1885,
+        "balance_deducted": 1,
+        "balance_refunded": 0,
+        "balance_after": 1884
+      }
+    }
+  },
+  {
+    "id": "cmuz2ercg000tnfsogjgzh30v",
+    "bridgeTxId": "BRG-20261008-EYB3OI",
+    "direction": "VENDING_REQ",
+    "httpStatus": null,
+    "durationMs": null,
+    "createdAt": "2026-10-08T04:57:24.208Z",
+    "payload": {
+      "transaction_id": "BRG-20261008-EYB3OI",
+      "product_id": "RZK-loc_test1",
+      "supplier_code": "RZK",
+      "supplier_product_id": "loc_test1",
+      "added_qty": 1,
+      "items": "[REDACTED]",
+      "source": "BRIDGE_BOT"
+    }
+  },
+  {
+    "id": "cmuz2erfe000vnfso59loc3qt",
+    "bridgeTxId": "BRG-20261008-EYB3OI",
+    "direction": "VENDING_RES",
+    "httpStatus": 201,
+    "durationMs": 108,
+    "createdAt": "2026-10-08T04:57:24.315Z",
+    "payload": {
+      "status": 201,
+      "message": "Top-up successful",
+      "transaction_id": "BRG-20261008-EYB3OI",
+      "product_id": "cmuz2ere60004snf19covrofz",
+      "inserted": 1,
+      "skipped": 0
+    }
+  },
+  {
+    "id": "cmuz2gtti000xnfsovk28widb",
+    "bridgeTxId": "BRG-20261008-PR019H",
+    "direction": "SUPPLIER_REQ",
+    "httpStatus": null,
+    "durationMs": null,
+    "createdAt": "2026-10-08T04:59:00.726Z",
+    "payload": {
+      "product_id": "loc_test1",
+      "quantity": 2
+    }
+  },
+  {
+    "id": "cmuz2gup5000znfso5mtzopo8",
+    "bridgeTxId": "BRG-20261008-PR019H",
+    "direction": "SUPPLIER_RES",
+    "httpStatus": 200,
+    "durationMs": 1141,
+    "createdAt": "2026-10-08T04:59:01.866Z",
+    "payload": {
+      "code": 200,
+      "success": true,
+      "order_id": 2924,
+      "seller_order_id": "loc_2924",
+      "product_id": "loc_test1",
+      "product_name": "Test Api product",
+      "quantity": 2,
+      "price_per_unit": 1,
+      "total_price": 2,
+      "status": "delivered",
+      "delivered_key": "[REDACTED]",
+      "delivered_keys": "[REDACTED]",
+      "is_activation": false,
+      "activation": {},
+      "balance": {
+        "balance_before": 1884,
+        "balance_deducted": 2,
+        "balance_refunded": 0,
+        "balance_after": 1882
+      }
+    }
+  },
+  {
+    "id": "cmuz2gv7m0011nfsoq8tr1vwg",
+    "bridgeTxId": "BRG-20261008-PR019H",
+    "direction": "VENDING_REQ",
+    "httpStatus": null,
+    "durationMs": null,
+    "createdAt": "2026-10-08T04:59:02.530Z",
+    "payload": {
+      "transaction_id": "BRG-20261008-PR019H",
+      "product_id": "RZK-loc_test1",
+      "supplier_code": "RZK",
+      "supplier_product_id": "loc_test1",
+      "added_qty": 2,
+      "items": "[REDACTED]",
+      "source": "BRIDGE_BOT"
+    }
+  },
+  {
+    "id": "cmuz2gv9m0013nfsotiaeokti",
+    "bridgeTxId": "BRG-20261008-PR019H",
+    "direction": "VENDING_RES",
+    "httpStatus": 201,
+    "durationMs": 71,
+    "createdAt": "2026-10-08T04:59:02.603Z",
+    "payload": {
+      "status": 201,
+      "message": "All items already exist",
+      "inserted": 0,
+      "skipped": 2
+    }
+  },
+  {
+    "id": "cmuz2ho3x0015nfso0n6fm7ez",
+    "bridgeTxId": "BRG-20261008-NOKLIQ",
+    "direction": "SUPPLIER_REQ",
+    "httpStatus": null,
+    "durationMs": null,
+    "createdAt": "2026-10-08T04:59:39.982Z",
+    "payload": {
+      "product_id": "loc_test1",
+      "quantity": 5
+    }
+  },
+  {
+    "id": "cmuz2hore0017nfsopyobj9qg",
+    "bridgeTxId": "BRG-20261008-NOKLIQ",
+    "direction": "SUPPLIER_RES",
+    "httpStatus": 200,
+    "durationMs": 845,
+    "createdAt": "2026-10-08T04:59:40.827Z",
+    "payload": {
+      "code": 200,
+      "success": true,
+      "order_id": 2925,
+      "seller_order_id": "loc_2925",
+      "product_id": "loc_test1",
+      "product_name": "Test Api product",
+      "quantity": 5,
+      "price_per_unit": 1,
+      "total_price": 5,
+      "status": "delivered",
+      "delivered_key": "[REDACTED]",
+      "delivered_keys": "[REDACTED]",
+      "is_activation": false,
+      "activation": {},
+      "balance": {
+        "balance_before": 1882,
+        "balance_deducted": 5,
+        "balance_refunded": 0,
+        "balance_after": 1877
+      }
+    }
+  },
+  {
+    "id": "cmuz2hp9e0019nfsozqp11q2e",
+    "bridgeTxId": "BRG-20261008-NOKLIQ",
+    "direction": "VENDING_REQ",
+    "httpStatus": null,
+    "durationMs": null,
+    "createdAt": "2026-10-08T04:59:41.475Z",
+    "payload": {
+      "transaction_id": "BRG-20261008-NOKLIQ",
+      "product_id": "RZK-loc_test1",
+      "supplier_code": "RZK",
+      "supplier_product_id": "loc_test1",
+      "added_qty": 5,
+      "items": "[REDACTED]",
+      "source": "BRIDGE_BOT"
+    }
+  },
+  {
+    "id": "cmuz2hpc4001bnfso1ib30i5y",
+    "bridgeTxId": "BRG-20261008-NOKLIQ",
+    "direction": "VENDING_RES",
+    "httpStatus": 201,
+    "durationMs": 98,
+    "createdAt": "2026-10-08T04:59:41.572Z",
+    "payload": {
+      "status": 201,
+      "message": "Top-up successful",
+      "transaction_id": "BRG-20261008-NOKLIQ",
+      "product_id": "cmuz2hpb20009snf1is9om7p8",
+      "inserted": 5,
+      "skipped": 0
+    }
+  },
+  {
+    "id": "cmuz2icr4001dnfso3vpeh5cs",
+    "bridgeTxId": "BRG-20261008-OM22IH",
+    "direction": "SUPPLIER_REQ",
+    "httpStatus": null,
+    "durationMs": null,
+    "createdAt": "2026-10-08T05:00:11.920Z",
+    "payload": {
+      "product_id": "loc_test1",
+      "quantity": 4
+    }
+  },
+  {
+    "id": "cmuz2idnc001fnfsoy6xf7tve",
+    "bridgeTxId": "BRG-20261008-OM22IH",
+    "direction": "SUPPLIER_RES",
+    "httpStatus": 200,
+    "durationMs": 1161,
+    "createdAt": "2026-10-08T05:00:13.081Z",
+    "payload": {
+      "code": 200,
+      "success": true,
+      "order_id": 2926,
+      "seller_order_id": "loc_2926",
+      "product_id": "loc_test1",
+      "product_name": "Test Api product",
+      "quantity": 4,
+      "price_per_unit": 1,
+      "total_price": 4,
+      "status": "delivered",
+      "delivered_key": "[REDACTED]",
+      "delivered_keys": "[REDACTED]",
+      "is_activation": false,
+      "activation": {},
+      "balance": {
+        "balance_before": 1877,
+        "balance_deducted": 4,
+        "balance_refunded": 0,
+        "balance_after": 1873
+      }
+    }
+  },
+  {
+    "id": "cmuz2if01001hnfsoahb0fmkv",
+    "bridgeTxId": "BRG-20261008-OM22IH",
+    "direction": "VENDING_REQ",
+    "httpStatus": null,
+    "durationMs": null,
+    "createdAt": "2026-10-08T05:00:14.833Z",
+    "payload": {
+      "transaction_id": "BRG-20261008-OM22IH",
+      "product_id": "RZK-loc_test1",
+      "supplier_code": "RZK",
+      "supplier_product_id": "loc_test1",
+      "added_qty": 4,
+      "items": "[REDACTED]",
+      "source": "BRIDGE_BOT"
+    }
+  },
+  {
+    "id": "cmuz2if2n001jnfsowwy44blp",
+    "bridgeTxId": "BRG-20261008-OM22IH",
+    "direction": "VENDING_RES",
+    "httpStatus": 201,
+    "durationMs": 96,
+    "createdAt": "2026-10-08T05:00:14.927Z",
+    "payload": {
+      "status": 201,
+      "message": "Top-up successful",
+      "transaction_id": "BRG-20261008-OM22IH",
+      "product_id": "cmuz2if1o000hsnf138wrnu1l",
+      "inserted": 4,
+      "skipped": 0
+    }
+  }
+]
