@@ -49,7 +49,7 @@ BRIDGE_SECRET_KEY=shared_secret_with_vendinglink
 
 # Encryption (32-byte Base64 for credential security)
 # Generate: node -e "console.log(crypto.randomBytes(32).toString('base64'))"
-KEYS_ENCRYPTION_KEY=v9T2H8zK4mQxR5pL1jC7nB3yN6vF0sD9gV4hW8qA2cE=
+KEYS_ENCRYPTION_KEY=1234567890=
 
 # Supplier (Rezeki Shop)
 SUPPLIER_RZK_BASE_URL=https://api.prastyaaneki.biz.id
