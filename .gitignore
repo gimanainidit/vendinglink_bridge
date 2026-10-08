@@ -16,3 +16,4 @@ coverage/
 *.db-journal
 *.db-wal
 *.db-shm
+audit_logs/
