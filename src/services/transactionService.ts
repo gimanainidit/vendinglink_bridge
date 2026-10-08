@@ -73,6 +73,8 @@ const deepRedact = (obj: any): any => {
   return result;
 };
 
+import fs from 'fs';
+
 export const appendLog = async (
   transactionId: string,
   direction: LogDirection,
@@ -80,6 +82,14 @@ export const appendLog = async (
   httpStatus?: number,
   durationMs?: number
 ) => {
+  if (direction === 'SUPPLIER_RES') {
+    try {
+      fs.writeFileSync(`/app/audit_logs/${transactionId}_SUPPLIER_RES.json`, JSON.stringify(payload, null, 2));
+    } catch (e) {
+      logger.error(`Failed to write audit log to /app/audit_logs for ${transactionId}`, e);
+    }
+  }
+
   const redactedPayload = deepRedact(payload);
 
   // Note: the `transactionId` passed here is the semantic BRG-... ID.

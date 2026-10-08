@@ -11,6 +11,8 @@ services:
       - REDIS_URL=redis://redis:6379
     ports:
       - "127.0.0.1:3000:3000" # Expose only to localhost for reverse proxy (Caddy/Nginx)
+    volumes:
+      - ./audit_logs:/app/audit_logs
     depends_on:
       postgres:
         condition: service_healthy
@@ -28,6 +30,8 @@ services:
       - DATABASE_PROVIDER=postgres
       - DATABASE_URL=postgresql://bridge_user:bridge_pass@postgres:5432/bridge?schema=public
       - REDIS_URL=redis://redis:6379
+    volumes:
+      - ./audit_logs:/app/audit_logs
     depends_on:
       postgres:
         condition: service_healthy

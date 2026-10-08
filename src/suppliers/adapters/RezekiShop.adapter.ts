@@ -95,9 +95,14 @@ export class RezekiShopAdapter implements ISupplierAdapter {
       const duration = Date.now() - start;
       await appendLog(params.transactionId, 'SUPPLIER_RES', data, 200, duration);
 
+      let deliveredKeys = data.delivered_keys || (data.delivered_key ? [data.delivered_key] : []);
+      if (deliveredKeys.length === 0) {
+        deliveredKeys = ["DIRECT_TOPUP_" + params.transactionId];
+      }
+
       return {
         orderId: data.order_id?.toString() || params.transactionId,
-        deliveredKeys: data.delivered_keys || (data.delivered_key ? [data.delivered_key] : []),
+        deliveredKeys,
         balance: {
           before: data.balance?.balance_before,
           deducted: data.balance?.balance_deducted,
