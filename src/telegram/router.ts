@@ -217,6 +217,38 @@ export const handleTextMessage = async (ctx: MyContext) => {
         await ctx.reply(`🔄 Forced retry initiated for TX ${command.txId}. Enqueued for delivery.`);
         break;
       }
+      case 'map': {
+        const supplierCode = command.supplierCode!;
+        const supplierProductId = command.productId!;
+        const vlProductId = command.vlProductId!;
+
+        // Check for an existing mapping so we can report created vs updated.
+        const existing = await prisma.productMapping.findUnique({
+          where: {
+            supplierCode_supplierProductId: { supplierCode, supplierProductId },
+          },
+        });
+
+        await prisma.productMapping.upsert({
+          where: {
+            supplierCode_supplierProductId: { supplierCode, supplierProductId },
+          },
+          update: { vlProductId },
+          create: { supplierCode, supplierProductId, vlProductId },
+        });
+
+        const action = existing
+          ? `diperbarui (sebelumnya \`${existing.vlProductId}\`)`
+          : 'dibuat';
+        await ctx.reply(
+          `✅ Mapping ${action}\n` +
+          `Supplier: \`${supplierCode}\`\n` +
+          `Supplier product ID: \`${supplierProductId}\`\n` +
+          `VendingLink product ID: \`${vlProductId}\``,
+          { parse_mode: 'Markdown' }
+        );
+        break;
+      }
       case 'help':
         await ctx.reply(
           '🤖 *VendingLink Bridge*\n\n' +
@@ -227,6 +259,7 @@ export const handleTextMessage = async (ctx: MyContext) => {
           '• `/status <TX_ID>` - Check tx status\n' +
           '• `/pending` - List pending tx\n' +
           '• `/retry <TX_ID>` - Force retry to VendingLink\n' +
+          '• `/map <SUPPLIER> <SUPPLIER_PRODUCT_ID> <VL_PRODUCT_ID>` - Register product mapping\n' +
           '• `/cancel` - Cancel current operation',
           { parse_mode: 'Markdown' }
         );

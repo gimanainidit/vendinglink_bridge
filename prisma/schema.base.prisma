@@ -77,4 +77,5 @@ model ProductMapping {
   enabled             Boolean @default(true)
 
   @@id([supplierCode, supplierProductId])
+  @@index([vlProductId])
 }

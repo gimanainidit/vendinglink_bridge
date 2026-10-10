@@ -1,25 +1,50 @@
 openapi: 3.1.0
 info:
-  title: VendingLink Bridge Ingress Webhook API
-  version: 1.0.0
+  title: VendingLink Bridge — Ingress & Egress API
+  version: 1.1.0
   description: |
-    Spesifikasi OpenAPI untuk endpoint penerima data dari **VendingLink Bridge**.
-    
-    Endpoint ini harus diimplementasikan oleh sistem utama VendingLink untuk menerima 
-    top-up stok / license keys hasil pembelian otomatis dari supplier.
+    Spesifikasi OpenAPI untuk semua kontrak HTTP antara **VendingLink Bridge** dan **VendingLink Storefront**.
+
+    Dokumen ini terbagi dua bagian:
+
+    **A. Endpoints di STOREFRONT** (harus diimplementasikan storefront):
+    - `POST /api/bridge/webhook/stock/topup` — terima stok/lisensi hasil pembelian
+    - `PATCH /api/bridge/products/{vlProductId}/category` _(baru v1.1 / P0)_ — set kategori setelah mapping
+
+    **B. Endpoints di BRIDGE** (disediakan bridge, dipanggil storefront — P2 ke atas):
+    - Belum tersedia. Ditambahkan di P2a (`POST /api/v1/requests`) dan P2b (`POST /api/v1/suppliers`).
+
+    **Catatan penting tentang `product_id` sejak v1.1:**
+    Field ini di-resolve dari tabel `ProductMapping` bridge. Jika produk belum dimapping
+    (admin belum menjalankan `/map` di bot), nilai akan menjadi `[UNMAPPED]`. Storefront
+    sebaiknya balas 400 agar bridge menandai transaksi sebagai `NEEDS_REVIEW`.
+
 servers:
   - url: https://vendinglink.txsiber.online
-    description: Production VendingLink Server
+    description: VendingLink Storefront (Production)
+  - url: https://bridge.txsiber.online
+    description: VendingLink Bridge (Production)
+
+tags:
+  - name: Storefront Ingress
+    description: Endpoint di storefront yang dipanggil oleh bridge
+  - name: Bridge Ingress
+    description: Endpoint di bridge yang dipanggil oleh storefront (P2+, belum tersedia)
 
 paths:
   /api/bridge/webhook/stock/topup:
     post:
+      tags: [Storefront Ingress]
       summary: Receive Topup Stock & License Keys
       description: |
         Menerima lisensi/serial/akun yang telah berhasil dibeli oleh Bridge Bot dari supplier.
-        
-        **Wajib**: Implementasikan verifikasi idempotency menggunakan header `Idempotency-Key` 
-        agar retry dari worker Bridge tidak menduplikasi penambahan stok.
+
+        **Wajib**: Implementasikan verifikasi idempotency menggunakan header `Idempotency-Key`
+        agar retry dari worker bridge tidak menduplikasi penambahan stok.
+
+        **Tentang `product_id`**: Sejak v1.1, nilai ini di-resolve dari tabel `ProductMapping`.
+        Jika admin belum mendaftarkan mapping via `/map`, nilai akan `[UNMAPPED]`. Balas 400
+        agar bridge menandai transaksi sebagai `NEEDS_REVIEW` untuk investigasi manual.
       operationId: receiveStockTopup
       security:
         - BridgeBearerAuth: []
@@ -53,7 +78,10 @@ paths:
               schema:
                 $ref: '#/components/schemas/StockTopupSuccessResponse'
         '400':
-          description: Bad Request (Payload tidak valid / format salah / produk tidak dikenal). Bridge tidak akan melakukan auto-retry (ditandai `NEEDS_REVIEW`).
+          description: |
+            Bad Request — payload tidak valid, `product_id` tidak dikenal di katalog storefront,
+            atau nilainya `[UNMAPPED]` (produk belum dimapping di bridge). Bridge tidak akan
+            melakukan auto-retry dan menandai transaksi sebagai `NEEDS_REVIEW`.
           content:
             application/json:
               schema:
@@ -61,7 +89,67 @@ paths:
         '401':
           description: Unauthorized (Token Bearer salah atau tidak disertakan).
         '500':
-          description: Internal Server Error di VendingLink. Bridge akan melakukan retry otomatis berkala (exponential backoff).
+          description: Internal Server Error di VendingLink. Bridge retry otomatis (exponential backoff).
+
+  /api/bridge/products/{vlProductId}/category:
+    patch:
+      tags: [Storefront Ingress]
+      summary: Set Product Category (baru v1.1 / P0)
+      description: |
+        Dipanggil oleh bridge setelah mapping produk berhasil (`/map` di bot), untuk mengaitkan
+        `vlProductId` ke kategori yang ada di katalog storefront.
+
+        Bridge memanggil ini secara opsional — jika storefront mengembalikan 404, bridge log
+        warning tapi tidak gagal. Storefront boleh mengimplementasikan bertahap (task ST-5b).
+
+        Operasi ini idempotent by design (PATCH), tidak perlu Idempotency-Key.
+      operationId: setProductCategory
+      security:
+        - BridgeBearerAuth: []
+      parameters:
+        - name: vlProductId
+          in: path
+          required: true
+          description: VendingLink product ID (seperti yang ada di katalog storefront).
+          schema:
+            type: string
+            example: "vl-product-456"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetCategoryPayload'
+      responses:
+        '200':
+          description: Kategori berhasil di-set atau sudah sama (idempotent).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  categorySlug:
+                    type: string
+                    example: "design-tools"
+        '404':
+          description: |
+            `vlProductId` tidak ditemukan di katalog storefront. Bridge log warning tapi tidak
+            gagal — admin perlu sinkronisasi mapping secara manual.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '400':
+          description: Payload tidak valid (categorySlug kosong atau format salah).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized.
 
 components:
   securitySchemes:
@@ -88,8 +176,11 @@ components:
           example: "BRG-20261006-EP1IC0"
         product_id:
           type: string
-          description: ID produk di sistem VendingLink
-          example: "RZK-loc_test1"
+          description: |
+            VendingLink product ID yang di-resolve dari tabel `ProductMapping` bridge.
+            Nilai `[UNMAPPED]` berarti admin belum mendaftarkan mapping via `/map` —
+            balas 400 agar bridge menandai transaksi sebagai NEEDS_REVIEW.
+          example: "vl-product-456"
         supplier_code:
           type: string
           description: Kode supplier asal
@@ -115,6 +206,22 @@ components:
           enum: [BRIDGE_BOT]
           example: "BRIDGE_BOT"
 
+    SetCategoryPayload:
+      type: object
+      required:
+        - categorySlug
+      properties:
+        categorySlug:
+          type: string
+          description: Slug kategori yang sudah ada di katalog storefront.
+          example: "design-tools"
+        tags:
+          type: array
+          items:
+            type: string
+          description: Tag opsional dari supplier API untuk keperluan filter/search.
+          example: ["productivity", "saas"]
+
     StockTopupSuccessResponse:
       type: object
       required:
@@ -137,4 +244,4 @@ components:
       properties:
         error:
           type: string
-          example: "Product RZK-loc_test1 not found in catalog"
+          example: "Product [UNMAPPED] not found in catalog"

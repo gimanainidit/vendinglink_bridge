@@ -86,7 +86,7 @@ export const appendLog = async (
     try {
       fs.writeFileSync(`/app/audit_logs/${transactionId}_SUPPLIER_RES.json`, JSON.stringify(payload, null, 2));
     } catch (e) {
-      logger.error(`Failed to write audit log to /app/audit_logs for ${transactionId}`, e);
+      logger.error({ err: e, transactionId }, `Failed to write audit log to /app/audit_logs`);
     }
   }
 

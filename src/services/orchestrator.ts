@@ -5,7 +5,33 @@ import { logger } from '../lib/logger';
 import { env } from '../config/env';
 import { prisma } from '../db';
 
-// This function will be called by the Telegram callback directly (to enqueue) 
+/**
+ * Resolve the VendingLink product ID from the local ProductMapping table.
+ * Returns null when no mapping exists — callers should log a warning and
+ * fall back to '[UNMAPPED]' rather than silently proceeding.
+ */
+export async function resolveVlProductId(
+  supplierCode: string,
+  supplierProductId: string
+): Promise<string | null> {
+  const mapping = await prisma.productMapping.findUnique({
+    where: {
+      supplierCode_supplierProductId: { supplierCode, supplierProductId },
+    },
+  });
+
+  if (!mapping) {
+    logger.warn(
+      { supplierCode, supplierProductId },
+      'No ProductMapping found — vlProductId unresolved. Use /map to register this product.'
+    );
+    return null;
+  }
+
+  return mapping.vlProductId;
+}
+
+// This function will be called by the Telegram callback directly (to enqueue)
 // or by the Queue worker to execute.
 
 export const createPendingTransaction = async (
@@ -22,8 +48,9 @@ export const createPendingTransaction = async (
 
   const transactionId = `BRG-${new Date().toISOString().replace(/\D/g, '').slice(0, 8)}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
   
-  // Bridge is now dumb. VendingLink handles mapping.
-  const vlProductId = "[UNKNOWN]";
+  // Resolve vlProductId from ProductMapping. Falls back to '[UNMAPPED]' so the
+  // transaction is still recorded — admin can fix the mapping later with /map.
+  const vlProductId = (await resolveVlProductId(adapter.code, productId)) ?? '[UNMAPPED]';
 
   const tx = await createTransaction({
     transactionId,
@@ -37,16 +64,4 @@ export const createPendingTransaction = async (
   });
 
   return tx;
-};
-
-export const executePurchase = async (transactionId: string) => {
-  // In Phase 3, this is called by the BullMQ worker
-  // For Phase 2, we will call this directly in confirmBuy to test
-
-  // 1. Fetch TX
-  // Normally we would use Prisma here, but since this is just logic outline:
-  // let's assume we pass the transaction object or fetch it
-  logger.info(`Executing purchase for TX: ${transactionId}`);
-  
-  // Actual implementation will live in Phase 3 workers
 };

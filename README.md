@@ -48,8 +48,9 @@ VENDINGLINK_URL=https://your-vendinglink-domain.com
 BRIDGE_SECRET_KEY=shared_secret_with_vendinglink
 
 # Encryption (32-byte Base64 for credential security)
-# Generate: node -e "console.log(crypto.randomBytes(32).toString('base64'))"
-KEYS_ENCRYPTION_KEY=1234567890=
+# Generate with: openssl rand -base64 32
+# WARNING: do NOT use the placeholder below. Replace it with the generated value.
+KEYS_ENCRYPTION_KEY=<replace-with-output-of-openssl-rand-base64-32>
 
 # Supplier (Rezeki Shop)
 SUPPLIER_RZK_BASE_URL=https://api.prastyaaneki.biz.id
@@ -188,7 +189,7 @@ Only Telegram User IDs specified in `ADMIN_TELEGRAM_ID` can interact with the bo
 | `/status <TX_ID>` | Check execution status of a transaction | `/status tx_12345` |
 | `/pending` | List the last 10 pending/in-progress transactions | `/pending` |
 | `/retry <TX_ID>` | Force manual delivery retry to VendingLink | `/retry tx_12345` |
-| `/cancel` | Cancel current interactive purchase flow | `/cancel` |
+| `/map <SUPPLIER> <SUPPLIER_PRODUCT_ID> <VL_PRODUCT_ID>` | Register or update a product mapping | `/map RZK prod_rzk_123 vl-product-456` |
 
 ---
 

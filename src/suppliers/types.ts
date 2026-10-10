@@ -6,6 +6,10 @@ export interface Product {
   availability: 'in_stock' | 'out_of_stock';
   requiresEmail: boolean;
   description: string;
+  /** Category slug from supplier API — forwarded as-is if available */
+  categorySlug?: string;
+  /** Additional tags or labels from supplier API */
+  tags?: string[];
 }
 
 export interface PurchaseResult {

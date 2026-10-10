@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { env } from '../../config/env';
 
-export type CommandType = 'list' | 'buy' | 'status' | 'pending' | 'balance' | 'retry' | 'help';
+export type CommandType = 'list' | 'buy' | 'status' | 'pending' | 'balance' | 'retry' | 'map' | 'help';
 
 export interface ParsedCommand {
   type: CommandType;
@@ -11,6 +11,7 @@ export interface ParsedCommand {
   emails?: string[];
   txId?: string;
   search?: string;
+  vlProductId?: string; // used by /map
 }
 
 const emailSchema = z.string().email();
@@ -80,6 +81,17 @@ export const parseCommand = (text: string): { command?: ParsedCommand; error?: s
     case '/help':
     case '/start':
       return { command: { type: 'help' } };
+
+    case '/map': {
+      // /map <SUPPLIER_CODE> <SUPPLIER_PRODUCT_ID> <VL_PRODUCT_ID>
+      if (parts.length < 4) {
+        return { error: 'Usage: /map <SUPPLIER_CODE> <SUPPLIER_PRODUCT_ID> <VL_PRODUCT_ID>' };
+      }
+      const supplierCode = parts[1].toUpperCase();
+      const productId = parts[2];   // supplier-side product ID
+      const vlProductId = parts[3]; // VendingLink-side product ID
+      return { command: { type: 'map', supplierCode, productId, vlProductId } };
+    }
 
     default:
       return { error: 'Unknown command. Type /help for usage.' };
