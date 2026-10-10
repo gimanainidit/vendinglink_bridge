@@ -60,9 +60,21 @@ const buyPreCheck = async (ctx: MyContext, supplierCode: string, productId: stri
 
     const price = product.price || 0;
     const total = price * qty;
-    
+
     // Check balance
     const balance = await adapter.getBalance();
+
+    // --- BR-5e: early mapping warning ---
+    // Show advisory BEFORE the Confirm button so admin can /map first.
+    // Hard block runs again at enqueue time in confirmBuy.ts.
+    const mapping = await prisma.productMapping.findUnique({
+      where: {
+        supplierCode_supplierProductId: { supplierCode: adapter.code, supplierProductId: productId },
+      },
+    });
+    const mappingWarning = mapping
+      ? ''
+      : `\n⚠️ *Produk belum dimapping\\!* Jalankan dulu:\n/map ${adapter.code} ${productId} <VL_PRODUCT_ID>\nJika dilanjutkan, transaksi akan parkir di NEEDS_REVIEW sampai dimapping & di-retry.\n`;
 
     let msg = `🛒 *Confirm Purchase*\n\n`;
     msg += `Supplier: ${adapter.displayName}\n`;
@@ -73,6 +85,7 @@ const buyPreCheck = async (ctx: MyContext, supplierCode: string, productId: stri
     }
     msg += `Total: Rp${total.toLocaleString('id-ID')}\n`;
     msg += `Balance: Rp${balance.toLocaleString('id-ID')} → Rp${(balance - total).toLocaleString('id-ID')}\n`;
+    msg += mappingWarning;
 
     if (balance < total) {
       await ctx.reply(`❌ Insufficient balance! \n${msg}`, { parse_mode: 'Markdown' });

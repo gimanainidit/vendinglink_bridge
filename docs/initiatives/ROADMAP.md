@@ -191,15 +191,23 @@ melakukan mapping dari bot atau dari UI storefront. Tipe `Product` di bridge dip
 
 **Pekerjaan bridge (v1.1-BR):**
 
-- [ ] BR-5a: Implementasikan penggunaan `ProductMapping` di `orchestrator.ts` —
+- [x] BR-5a: Implementasikan penggunaan `ProductMapping` di `orchestrator.ts` —
   resolve `vlProductId` dari tabel `ProductMapping` berdasarkan `supplierCode` + `supplierProductId`,
-  fallback ke pola lama `[UNKNOWN]` hanya jika tidak ditemukan (dengan warning).
-- [ ] BR-5b: Tambah command `/map <SUPPLIER> <SUPPLIER_PRODUCT_ID> <VL_PRODUCT_ID>` di
+  fallback ke `[UNMAPPED]` jika tidak ditemukan (dengan warning di log).
+- [x] BR-5b: Tambah command `/map <SUPPLIER> <SUPPLIER_PRODUCT_ID> <VL_PRODUCT_ID>` di
   `commandParser.ts` dan `router.ts` agar admin bisa mendaftarkan mapping dari Telegram.
-- [ ] BR-5c: Tambah field opsional `categorySlug?: string` dan `tags?: string[]` ke tipe
+- [x] BR-5c: Tambah field opsional `categorySlug?: string` dan `tags?: string[]` ke tipe
   `Product` di `src/suppliers/types.ts` (backward-compatible, opsional).
 - [ ] BR-5d: `ISupplierAdapter.getProductList()` meneruskan `categorySlug` jika ada dari API
   supplier. RezekiShop adapter dicek apakah endpoint `/v1/products` mengembalikan kategori.
+- [x] BR-5e: Hard-block pembelian produk yang belum dimapping.
+  - `confirmBuy.ts`: panggil `resolveVlProductId()` sebelum `supplierOrderQueue.add()`.
+    Jika null, tolak dengan pesan error dan instruksi `/map`. Uang tidak keluar.
+  - `router.ts` `buyPreCheck`: tampilkan warning mapping sebelum tombol Confirm muncul,
+    sehingga admin bisa `/map` dahulu tanpa harus sudah menekan Confirm.
+  - Kontrak error body storefront ditambah ke `docs/openapi.yaml`: error code
+    `PRODUCT_NOT_MAPPED` dengan field `supplier_code` + `supplier_product_id` agar
+    bridge bisa menampilkan instruksi spesifik ke admin.
 
 **Pekerjaan storefront (v1.1-ST):**
 
@@ -210,9 +218,13 @@ melakukan mapping dari bot atau dari UI storefront. Tipe `Product` di bridge dip
 - [ ] ST-5c: UI admin kategorisasi (bisa sederhana: dropdown saat edit produk).
 
 **Acceptance criteria:**
-- `vlProductId` tidak lagi `[UNKNOWN]` untuk produk yang sudah dimapping.
+- `vlProductId` tidak lagi `[UNKNOWN]` atau `[UNMAPPED]` untuk produk yang sudah dimapping.
 - `/map RZK <id_supplier> <id_vl>` berhasil menyimpan ke `ProductMapping` dan dikonfirmasi bot.
-- Kategori terpilih tampil di katalog storefront.
+- `/buy` untuk produk yang belum dimapping: warning tampil di pre-check, dan jika admin tetap
+  menekan Confirm, transaksi **ditolak** (uang tidak keluar) dengan instruksi `/map`.
+- Storefront mengembalikan `{ "error": "PRODUCT_NOT_MAPPED", "supplier_code": "...", "supplier_product_id": "..." }`
+  untuk payload dengan `product_id` yang tidak dikenal.
+- Kategori terpilih tampil di katalog storefront (ST-5a/5b).
 
 ---
 

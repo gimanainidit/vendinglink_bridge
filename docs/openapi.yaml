@@ -244,4 +244,21 @@ components:
       properties:
         error:
           type: string
-          example: "Product [UNMAPPED] not found in catalog"
+          description: |
+            Machine-readable error code. Use this for programmatic handling.
+            Known values for bridge-related errors:
+            - `PRODUCT_NOT_MAPPED` — `product_id` is `[UNMAPPED]`, no ProductMapping entry exists
+              on the bridge. Admin must run `/map <SUPPLIER> <SUPPLIER_PRODUCT_ID> <VL_PRODUCT_ID>`.
+          example: "PRODUCT_NOT_MAPPED"
+        message:
+          type: string
+          description: Human-readable description (English).
+          example: "supplier_product_id 'loc_test1' (RZK) has no catalog mapping"
+        supplier_code:
+          type: string
+          description: Present when error is PRODUCT_NOT_MAPPED. Identifies which supplier.
+          example: "RZK"
+        supplier_product_id:
+          type: string
+          description: Present when error is PRODUCT_NOT_MAPPED. Identifies the unmapped SKU.
+          example: "loc_test1"
