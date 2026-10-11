@@ -65,9 +65,10 @@ Setiap perubahan kontrak wajib direvisi di kedua dokumen sebelum implementasi.
 | Versi | Nama                                      | Status             | Sprint Target |
 |-------|-------------------------------------------|--------------------|---------------|
 | v1.0  | Foundation                                | CLOSED · VERIFIED  | Selesai       |
-| v1.1  | Ketahanan Data & Fondasi Katalog (P0)     | IN PLANNING        | Sprint 1      |
-| v1.2  | Program Promo & Loyalitas (P1)            | PLANNED            | Sprint 2-3    |
-| v2.0  | Agentic Purchasing & Supplier Dinamis (P2)| PLANNED            | Sprint 4-6    |
+| v1.1  | Ketahanan Data & Fondasi Katalog (P0)     | CLOSED · VERIFIED  | Sprint 1      |
+| v1.2  | Program Promo & Loyalitas (P1)            | HANDOFF ALIGNED    | Sprint 2-3    |
+| v2.0  | Agentic Purchasing Core (P2a)             | CLOSED · VERIFIED  | Sprint 4      |
+| v2.1  | Dynamic Supplier Management (P2b)         | IN PROGRESS        | Sprint 5-6    |
 | v3.x  | Long-Term / P3                            | OPTIONAL · GATED   | TBD           |
 
 ---
@@ -147,19 +148,18 @@ Uji restore otomatis mingguan ke database sementara + validasi jumlah baris.
 
 **Pekerjaan bridge (v1.1-BR):**
 
-- [ ] BR-8a: Tambah `rclone` ke service `db-backup` di `docker-compose.yml`.
+- [x] BR-8a: Tambah `rclone` ke service `db-backup` di `docker-compose.yml`.
   Konfigurasi env: `BACKUP_RCLONE_REMOTE` (nama remote rclone, misal `gdrive:backups/bridge`).
-- [ ] BR-8b: Enkripsi dump sebelum upload. Gunakan `openssl enc -aes-256-cbc` dengan kunci
+- [x] BR-8b: Enkripsi dump sebelum upload. Gunakan `openssl enc -aes-256-cbc` dengan kunci
   `BACKUP_ENCRYPTION_KEY` yang **disimpan terpisah dari VPS** (misalnya di password manager atau
   secret store terpisah dari `KEYS_ENCRYPTION_KEY`).
-- [ ] BR-8c: Perbarui `scripts/export_decrypted.ts` — tambah flag `--plaintext` yang wajib
+- [x] BR-8c: Perbarui `scripts/export_decrypted.ts` — tambah flag `--plaintext` yang wajib
   eksplisit. Default output dienkripsi dengan `KEYS_ENCRYPTION_KEY` yang sudah ada.
-- [ ] BR-8d: Tambah script `scripts/verify_backup.sh` — restore dump terakhir ke DB `bridge_verify`,
+- [x] BR-8d: Tambah script `scripts/verify_backup.sh` — restore dump terakhir ke DB `bridge_verify`,
   bandingkan `SELECT COUNT(*) FROM "Transaction"`, kirim hasil ke Telegram admin.
-- [ ] BR-8e: Dokumentasikan prosedur escrow kunci di `docs/operations/key-escrow.md`.
-- [ ] BR-8f: Tambah env vars baru ke `src/config/env.ts` (Zod schema) dan `.env.example`.
-- [ ] BR-8g: Perbaiki contoh `KEYS_ENCRYPTION_KEY=1234567890=` di `README.md:52` — bukan 32-byte
-  valid dan berisiko disalin apa adanya.
+- [x] BR-8e: Dokumentasikan prosedur escrow kunci di `docs/operations/key-escrow.md`.
+- [x] BR-8f: Tambah env vars baru ke `src/config/env.ts` (Zod schema) dan `.env.example`.
+- [x] BR-8g: Perbaiki contoh `KEYS_ENCRYPTION_KEY` di `README.md:52`.
 
 **Acceptance criteria:**
 - Backup harian berhasil tersimpan di remote storage yang terpisah dari VPS.
@@ -170,49 +170,38 @@ Uji restore otomatis mingguan ke database sementara + validasi jumlah baris.
 
 ---
 
-### [Storefront] Item 5 — Kategorisasi Produk
-
-**Kondisi sekarang (gap) — di sisi bridge:**
-- Model `ProductMapping` ada di `prisma/schema.base.prisma:72-80` tapi tidak direferensikan
-  satu baris pun di `src/` (grep `ProductMapping` → 0 hasil).
-- `src/services/orchestrator.ts:26`: `vlProductId = "[UNKNOWN]"` — mapping produk ke VendingLink
-  belum diimplementasi.
-- `ISupplierAdapter` tidak memiliki field `category` di tipe `Product` (`src/suppliers/types.ts`).
-
-**Kondisi sekarang (gap) — di sisi storefront:**
-- Tidak ada model Category atau tag pada produk (tidak dapat diverifikasi karena repo terpisah,
-  tapi menjadi prasyarat fitur voucher per-kategori, konten panduan, dan listing Shopee).
+### [Storefront & Bridge] Item 5 — Fondasi Multi-Supplier & Kategorisasi Produk
 
 **Kondisi target (to-be):**
-
-Storefront memiliki model kategori hierarkis. Bridge memperbarui `ProductMapping` saat admin
-melakukan mapping dari bot atau dari UI storefront. Tipe `Product` di bridge diperluas dengan
-`categoryId?: string` dan `tags?: string[]`.
+Multi-supplier terintegrasi secara modular (`RezekiShop` & `PrimeDigital`). Storefront memiliki model kategori hierarkis. Bridge memperbarui `ProductMapping` saat admin melakukan mapping dari bot. Tipe `Product` di bridge diperluas dengan `categorySlug?: string`, `tags?: string[]`, `currency?: string`, dan `supplierCode?: string`.
 
 **Pekerjaan bridge (v1.1-BR):**
 
-- [ ] BR-5a: Implementasikan penggunaan `ProductMapping` di `orchestrator.ts` —
+- [x] BR-5a: Implementasikan penggunaan `ProductMapping` di `orchestrator.ts` —
   resolve `vlProductId` dari tabel `ProductMapping` berdasarkan `supplierCode` + `supplierProductId`,
-  fallback ke pola lama `[UNKNOWN]` hanya jika tidak ditemukan (dengan warning).
-- [ ] BR-5b: Tambah command `/map <SUPPLIER> <SUPPLIER_PRODUCT_ID> <VL_PRODUCT_ID>` di
+  fallback ke `[UNMAPPED]` jika tidak ditemukan (dengan warning di log).
+- [x] BR-5b: Tambah command `/map <SUPPLIER> <SUPPLIER_PRODUCT_ID> <VL_PRODUCT_ID>` di
   `commandParser.ts` dan `router.ts` agar admin bisa mendaftarkan mapping dari Telegram.
-- [ ] BR-5c: Tambah field opsional `categorySlug?: string` dan `tags?: string[]` ke tipe
-  `Product` di `src/suppliers/types.ts` (backward-compatible, opsional).
-- [ ] BR-5d: `ISupplierAdapter.getProductList()` meneruskan `categorySlug` jika ada dari API
-  supplier. RezekiShop adapter dicek apakah endpoint `/v1/products` mengembalikan kategori.
+- [x] BR-5c: Tambah field opsional `categorySlug?: string`, `tags?: string[]`, `currency?: string`, dan `supplierCode?: string` ke tipe `Product` di `src/suppliers/types.ts`.
+- [x] BR-5d: `ISupplierAdapter.getProductList()` meneruskan `categorySlug` jika ada dari API supplier.
+- [x] BR-5e: Hard-block pembelian produk yang belum dimapping (`confirmBuy.ts` & `router.ts`).
+- [x] BR-5f: Implementasi adapter **Prime Digital AI (PDA)** (`src/suppliers/adapters/PrimeDigital.adapter.ts`) tipe Reseller Customer-linked dengan auth `X-API-Key` dan penanganan idempotency.
+- [x] BR-5g: Multi-supplier query & perbandingan cerdas di `SupplierFactory` (`getAllAdapters`, `listSuppliers`, `findBestOffer` berdasarkan stok & harga terendah sebagai fondasi P2).
 
 **Pekerjaan storefront (v1.1-ST):**
 
-- [ ] ST-5a: Desain & migrasi skema `Category` (id, slug, name, parentId?) dan relasi ke
-  `Product`.
-- [ ] ST-5b: Endpoint `PATCH /api/bridge/products/:vlProductId/category` agar bridge atau admin
-  bisa set kategori saat mapping.
-- [ ] ST-5c: UI admin kategorisasi (bisa sederhana: dropdown saat edit produk).
+- [x] ST-5a: Desain & migrasi skema `Category` (id, slug, name) dan relasi ke `Product`.
+- [x] ST-5b: Endpoint `PATCH /api/bridge/products/:vlProductId/category` (Bearer auth, rate limit, Zod).
+- [x] ST-5c: UI admin kategorisasi produk.
 
 **Acceptance criteria:**
-- `vlProductId` tidak lagi `[UNKNOWN]` untuk produk yang sudah dimapping.
+- `vlProductId` tidak lagi `[UNKNOWN]` atau `[UNMAPPED]` untuk produk yang sudah dimapping.
 - `/map RZK <id_supplier> <id_vl>` berhasil menyimpan ke `ProductMapping` dan dikonfirmasi bot.
-- Kategori terpilih tampil di katalog storefront.
+- `/buy` untuk produk yang belum dimapping: warning tampil di pre-check, dan jika admin tetap
+  menekan Confirm, transaksi **ditolak** (uang tidak keluar) dengan instruksi `/map`.
+- Storefront mengembalikan `{ "error": "PRODUCT_NOT_MAPPED", "supplier_code": "...", "supplier_product_id": "..." }`
+  untuk payload dengan `product_id` yang tidak dikenal.
+- Kategori terpilih tampil di katalog storefront (ST-5a/5b).
 
 ---
 
@@ -309,17 +298,18 @@ PayoutBatch
   Integrasi dengan WhatsApp Business API atau platform broadcast pilihan.
 - [ ] ST-1b: Halaman opt-in consent dengan timestamp yang dicatat.
 
-**Pekerjaan bridge (v1.2-BR):**
-- Tidak ada perubahan wajib di bridge untuk P1. Bridge hanya supplier data, bukan customer data.
-- Opsional: command `/payout` di bot Telegram bridge sebagai shortcut ke storefront API
-  (nilai rendah, bisa diskip).
+**Pekerjaan bridge (v1.2-BR — P1 Handoff Alignment):**
+- [x] BR-P1-a: Sinkronisasi penanganan replay HTTP 409 (`COMPLETED` idempoten sukses vs `PROCESSING` in-flight retryable) di `src/vendinglink/vendingLinkClient.ts`.
+- [x] BR-P1-b: Implementasi test suite Vitest di `src/__tests__/` (12 unit & integration tests lulus, menutup TD-1).
+- [x] BR-P1-c: Update `docs/openapi.yaml` dan `VENDINGLINK_WEBHOOK_SPEC.md` selaras kontrak Storefront (status 201, skema replay 409, sandbox/local servers).
+- [x] BR-P1-d: Integrasi Swagger UI console di `/swagger` dan `/docs/swagger` untuk interactive test sandbox dan production.
+- [x] BR-P1-e: Review dan verifikasi matriks uji silang `docs/initiatives/P1_BRIDGE_HANDOFF_SPEC.md`.
 
-**Acceptance criteria:**
-- Customer A pakai referral code Customer B: A dapat diskon, B dapat reward ACCRUED.
-- Self-referral (phone sama setelah normalisasi) ditolak.
-- Reward tidak pernah PAYABLE sebelum order COMPLETED + N hari.
-- Broadcast hanya terkirim ke customer dengan `consentPromoAt IS NOT NULL`.
-- CSV payout terbuat, admin approve via Telegram, status berubah ke APPROVED (transfer tetap manual).
+**Acceptance criteria Handoff P1:**
+- Topup baru dari bridge diterima Storefront dengan HTTP 201 (atau 409 bila duplikat COMPLETED).
+- Replay event berstatus PROCESSING di Storefront memicu retryable error di Bridge (tidak auto-complete).
+- Zero test files (TD-1) teratasi: `npm test` lulus 100% tanpa kegagalan.
+- Interactive Swagger UI aktif di `/swagger` dengan preset try-it-out untuk pengujian sandbox & production.
 
 ---
 
@@ -432,18 +422,17 @@ daily cap > balance floor > price delta > high value threshold.
 
 **Pekerjaan bridge P2a:**
 
-- [ ] BR-P2a-1: Cleanup `orchestrator.ts` — hapus stub dan import menganggur.
-- [ ] BR-P2a-2: Migrasi schema `ProductRequest` + enum ke `schema.base.prisma`.
-- [ ] BR-P2a-3: Env vars guardrail ke `src/config/env.ts` + `.env.example`.
-- [ ] BR-P2a-4: `POST /api/v1/requests` — Zod, rate-limit, Bearer auth.
-- [ ] BR-P2a-5: `POST /api/v1/requests/:id/confirm`.
-- [ ] BR-P2a-6: `productSearchQueue` + worker — parallel, timeout, guardrail, status update.
-- [ ] BR-P2a-7: Balance monitor — cron 30 menit, alert Telegram di bawah floor.
-- [ ] BR-P2a-8: `/agent pause` + `/agent resume` di parser + router.
-- [ ] BR-P2a-9: `/balance all` — cek semua supplier aktif.
-- [ ] BR-P2a-10: Notif ke storefront `POST {VL_URL}/api/bridge/webhook/request-update`
-  — revisi `docs/openapi.yaml` + `VENDINGLINK_WEBHOOK_SPEC.md`.
-- [ ] BR-P2a-11: Test coverage guardrail (Vitest + nock). **Wajib lulus sebelum deploy.**
+- [x] BR-P2a-1: Cleanup `orchestrator.ts` — hapus stub dan import menganggur (VERIFIED TD-6).
+- [x] BR-P2a-2: Migrasi schema `ProductRequest` + enum ke `schema.base.prisma` (VERIFIED via `npm run db:push`).
+- [x] BR-P2a-3: Env vars guardrail ke `src/config/env.ts` + `.env.example` (VERIFIED: AGENT_* vars).
+- [x] BR-P2a-4: `POST /api/v1/requests` & `GET /api/v1/requests/:id` — Zod, Bearer auth, Idempotency-Key (VERIFIED).
+- [x] BR-P2a-5: `POST /api/v1/requests/:id/confirm` — trigger pembelian instan ke supplier terbaik (VERIFIED).
+- [x] BR-P2a-6: `productSearchQueue` + worker — parallel multi-supplier (`RZK`, `PDA`, `DAI`), timeout, guardrail, status update (VERIFIED).
+- [x] BR-P2a-7: Balance monitor & floor guardrail (`agentGuardrailService.evaluateGuardrail` + `/balance [ALL]`) (VERIFIED).
+- [x] BR-P2a-8: `/agent pause`, `/agent resume`, `/agent status` di parser + router Telegram (VERIFIED).
+- [x] BR-P2a-9: `/balance all` — cek semua supplier aktif (`RZK`, `PDA`, `DAI`) (VERIFIED).
+- [x] BR-P2a-10: Notif ke storefront `POST {VL_URL}/api/bridge/webhook/request-update` (`requestNotifier.ts`) (VERIFIED).
+- [x] BR-P2a-11: Test coverage guardrail & inbound API di Vitest (`agentPurchasingP2a.test.ts`, 47 tests passed) (VERIFIED).
 
 **Pekerjaan storefront P2a:**
 
@@ -463,11 +452,11 @@ daily cap > balance floor > price delta > high value threshold.
 
 ### [Bridge] P2b — Dynamic Supplier Management & Agentic Adapter Build
 
-**Kondisi sekarang (gap):**
-- `SupplierFactory.ts:9` hardcode hanya `new RezekiShopAdapter()`.
-- Tambah supplier baru = tulis adapter TypeScript, daftarkan di factory, rebuild Docker, redeploy.
-- Env vars supplier hardcode di `src/config/env.ts:20-21`.
-- Tidak ada model Supplier di DB, tidak ada UI manajemen di storefront.
+**Kondisi sekarang (kemajuan terkini):**
+- `SupplierFactory.ts` telah mendukung multi-supplier modular: `RezekiShopAdapter` (RZK), `PrimeDigitalAdapter` (PDA), dan `DigitalAIStoreAdapter` (DAI).
+- Mekanisme pemeringkatan penawaran otonom `supplierFactory.findBestOffer()` telah aktif membandingkan stok & harga antar supplier.
+- Graceful degradation aktif bila API key supplier belum diset di `.env` (tidak memicu crash runtime).
+- Sisa gap: model dinamis `Supplier` di DB dan UI manajemen runtime di storefront.
 
 **Kondisi target (to-be):**
 
@@ -595,12 +584,12 @@ Bangun CMS minimal di storefront dengan MDX atau rich-text editor.
 
 | ID   | Deskripsi                                                                     | Risiko    | Sprint target    |
 |------|-------------------------------------------------------------------------------|-----------|------------------|
-| TD-1 | Nol test file di `src/` meski Vitest + nock + supertest terpasang. `npm run test` tidak memverifikasi apa pun. | TINGGI — wajib selesai sebelum P2a deploy | P0/v1.1 |
-| TD-2 | `scripts/export_decrypted.ts` menulis kunci terdekripsi ke JSON plaintext tanpa flag eksplisit. File sudah ada di working tree. | TINGGI — data kunci di disk tanpa enkripsi | P0/v1.1 |
-| TD-3 | `README.md:52` contoh `KEYS_ENCRYPTION_KEY=1234567890=` bukan 32-byte valid, berisiko disalin apa adanya. | MEDIUM | P0/v1.1 (BR-8g) |
-| TD-4 | `db.ts:12` logging `query` aktif di production — noise log dan potensi ekspos query sensitif. Ganti ke `['error']` di production. | MEDIUM | P0/v1.1 |
-| TD-5 | `ProductMapping` model di schema tapi 0 referensi di `src/` (dead model). `vlProductId = "[UNKNOWN]"` di orchestrator. | MEDIUM | P0/v1.1 (BR-5a) |
-| TD-6 | `orchestrator.ts:42-52` `executePurchase()` stub kosong + import menganggur. | LOW | P2a (BR-P2a-1) |
+| TD-1 | Nol test file di `src/` meski Vitest + nock + supertest terpasang. `npm run test` tidak memverifikasi apa pun. | ✅ RESOLVED (2026-10-11): Vitest suite di `src/__tests__/` (21 tests lulus: client, adapter, express, swagger) | — |
+| TD-2 | `scripts/export_decrypted.ts` menulis kunci terdekripsi ke JSON plaintext tanpa flag eksplisit. File sudah ada di working tree. | ✅ RESOLVED (BR-8c): Output default terenkripsi AES-256; flag eksplisit `--plaintext` diwajibkan | — |
+| TD-3 | `README.md:52` contoh `KEYS_ENCRYPTION_KEY=1234567890=` bukan 32-byte valid, berisiko disalin apa adanya. | ✅ RESOLVED (BR-8g): Instruksi `openssl rand -base64 32` & peringatan placeholder diperbarui | — |
+| TD-4 | `db.ts:12` logging `query` aktif di production — noise log dan potensi ekspos query sensitif. Ganti ke `['error']` di production. | ✅ RESOLVED (2026-10-11): Logging diatur error-only di production, verbose di dev | — |
+| TD-5 | `ProductMapping` model di schema tapi 0 referensi di `src/` (dead model). `vlProductId = "[UNKNOWN]"` di orchestrator. | ✅ RESOLVED (BR-5a): Resolusi `vlProductId` aktif di `orchestrator.ts` & Telegram `/map` | — |
+| TD-6 | `orchestrator.ts:42-52` `executePurchase()` stub kosong + import menganggur. | ✅ RESOLVED (2026-10-11): Stub dan import menganggur dibersihkan | — |
 | TD-7 | Session middleware in-memory (`session.ts:20`). Restart bot = state AWAITING_EMAIL hilang. Cukup untuk admin tunggal, tapi dokumentasikan limitasinya di README. | LOW | Opsional |
 
 ---

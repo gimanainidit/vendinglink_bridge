@@ -10,6 +10,10 @@ export interface Product {
   categorySlug?: string;
   /** Additional tags or labels from supplier API */
   tags?: string[];
+  /** Currency of price, default IDR */
+  currency?: string;
+  /** Supplier identifier code */
+  supplierCode?: string;
 }
 
 export interface PurchaseResult {

@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { env } from '../../config/env';
 
-export type CommandType = 'list' | 'buy' | 'status' | 'pending' | 'balance' | 'retry' | 'map' | 'help';
+export type CommandType = 'list' | 'buy' | 'status' | 'pending' | 'balance' | 'retry' | 'map' | 'agent' | 'help';
 
 export interface ParsedCommand {
   type: CommandType;
@@ -74,8 +74,8 @@ export const parseCommand = (text: string): { command?: ParsedCommand; error?: s
       return { command: { type: 'pending' } };
 
     case '/balance': {
-      if (parts.length < 2) return { error: 'Usage: /balance <SUPPLIER_CODE>' };
-      return { command: { type: 'balance', supplierCode: parts[1].toUpperCase() } };
+      const supplierCode = parts.length > 1 ? parts[1].toUpperCase() : 'ALL';
+      return { command: { type: 'balance', supplierCode } };
     }
 
     case '/help':
@@ -91,6 +91,15 @@ export const parseCommand = (text: string): { command?: ParsedCommand; error?: s
       const productId = parts[2];   // supplier-side product ID
       const vlProductId = parts[3]; // VendingLink-side product ID
       return { command: { type: 'map', supplierCode, productId, vlProductId } };
+    }
+
+    case '/agent': {
+      // /agent [pause|resume|status]
+      const action = parts.length > 1 ? parts[1].toLowerCase() : 'status';
+      if (!['pause', 'resume', 'status'].includes(action)) {
+        return { error: 'Usage: /agent [pause|resume|status]' };
+      }
+      return { command: { type: 'agent', search: action } };
     }
 
     default:

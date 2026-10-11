@@ -1,6 +1,7 @@
 import { MyContext } from '../middleware/session';
 import { logger } from '../../lib/logger';
-import { createPendingTransaction } from '../../services/orchestrator';
+import { createPendingTransaction, resolveVlProductId } from '../../services/orchestrator';
+import { prisma } from '../../db';
 import { supplierOrderQueue } from '../../queues/queues';
 
 export const handleCallbackQuery = async (ctx: MyContext) => {
@@ -40,6 +41,19 @@ export const handleCallbackQuery = async (ctx: MyContext) => {
       await ctx.editMessageText(`⏳ Enqueueing purchase of ${qty}x ${productId} from ${supplier}...`);
       
       try {
+        // BR-5e hard block: refuse to spend money on an unmapped product.
+        // resolveVlProductId already has this data, so we check before enqueueing.
+        const vlProductId = await resolveVlProductId(supplier, productId);
+        if (!vlProductId) {
+          await ctx.reply(
+            `❌ *Produk belum dimapping ke VendingLink*\.\n` +
+            `Jalankan dulu: \`/map ${supplier} ${productId} <VL_PRODUCT_ID>\`\n` +
+            `Pembelian tidak dilanjutkan\.`,
+            { parse_mode: 'MarkdownV2' }
+          );
+          return;
+        }
+
         const tx = await createPendingTransaction(
           supplier, 
           productId, 

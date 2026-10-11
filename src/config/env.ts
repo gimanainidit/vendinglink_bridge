@@ -17,8 +17,33 @@ const envSchema = z.object({
   BRIDGE_SECRET_KEY: z.string().min(1),
   KEYS_ENCRYPTION_KEY: z.string().min(1),
   MAX_BUY_QTY: z.coerce.number().int().min(1).max(100).default(100),
+  // Suppliers
   SUPPLIER_RZK_BASE_URL: z.string().url().optional(),
   SUPPLIER_RZK_API_KEY: z.string().optional(),
+  SUPPLIER_PDA_BASE_URL: z.string().url().default('https://prime-digital-ai.com'),
+  SUPPLIER_PDA_API_KEY: z.string().optional(),
+  // DAI (Digital AI Store)
+  SUPPLIER_DAI_BASE_URL: z.string().url().default('http://43.156.46.152:8000'),
+  SUPPLIER_DAI_API_KEY: z.string().optional(),
+  // Backup & DR (BR-8)
+  BACKUP_RCLONE_REMOTE: z.string().optional(),
+  BACKUP_ENCRYPTION_KEY: z.string().optional(),
+  // Agentic Purchasing Guardrails (P2a)
+  AGENT_ENABLED: z.coerce.boolean().default(true),
+  AGENT_MAX_SPEND_PER_REQUEST: z.coerce.number().default(500000),
+  AGENT_MAX_SPEND_PER_DAY: z.coerce.number().default(5000000),
+  AGENT_MIN_BALANCE_FLOOR: z.coerce.number().default(200000),
+  AGENT_PRICE_DELTA_ALERT_PCT: z.coerce.number().default(20),
+  AGENT_ALLOWED_SUPPLIER_CODES: z.string().default('RZK,PDA,DAI'),
+  AGENT_HIGH_VALUE_THRESHOLD: z.coerce.number().default(1000000),
 });
+
+// Normalize environment aliases for DAI
+if (!process.env.SUPPLIER_DAI_BASE_URL && process.env.SUPLIER_DAI_BASE_URL) {
+  process.env.SUPPLIER_DAI_BASE_URL = process.env.SUPLIER_DAI_BASE_URL;
+}
+if (!process.env.SUPPLIER_DAI_API_KEY && process.env.DAI_API_KEY) {
+  process.env.SUPPLIER_DAI_API_KEY = process.env.DAI_API_KEY;
+}
 
 export const env = envSchema.parse(process.env);

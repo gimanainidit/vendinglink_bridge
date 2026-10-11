@@ -1,6 +1,7 @@
 import { supplierOrderWorker } from './queues/workers/supplierOrder.worker';
 import { vendingDeliveryWorker } from './queues/workers/vendingDelivery.worker';
 import { reconcileWorker } from './queues/workers/reconcile.worker';
+import { productSearchWorker } from './queues/workers/productSearch.worker';
 import { redisConnection } from './queues/connection';
 import { runSweeper } from './queues/sweeper';
 import { logger } from './lib/logger';
@@ -20,6 +21,7 @@ const startWorker = async () => {
     await supplierOrderWorker.close();
     await vendingDeliveryWorker.close();
     await reconcileWorker.close();
+    await productSearchWorker.close();
     
     redisConnection.disconnect();
     await prisma.$disconnect();

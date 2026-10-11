@@ -1,37 +1,189 @@
 openapi: 3.1.0
 info:
   title: VendingLink Bridge — Ingress & Egress API
-  version: 1.1.0
+  version: 2.0.0
   description: |
-    Spesifikasi OpenAPI untuk semua kontrak HTTP antara **VendingLink Bridge** dan **VendingLink Storefront**.
+    Spesifikasi OpenAPI komprehensif untuk kontrak HTTP dua arah antara **VendingLink Bridge** dan **VendingLink Storefront** (Mendukung P0, P1, dan P2a Agentic Purchasing & Multi-Supplier).
 
-    Dokumen ini terbagi dua bagian:
+    Dokumen ini terbagi dua domain:
 
-    **A. Endpoints di STOREFRONT** (harus diimplementasikan storefront):
-    - `POST /api/bridge/webhook/stock/topup` — terima stok/lisensi hasil pembelian
-    - `PATCH /api/bridge/products/{vlProductId}/category` _(baru v1.1 / P0)_ — set kategori setelah mapping
+    **A. Endpoints di STOREFRONT** (diimplementasikan Storefront, dipanggil Bridge):
+    - `POST /api/bridge/webhook/stock/topup` — terima stok & lisensi hasil pembelian supplier.
+    - `PATCH /api/bridge/products/{vlProductId}/category` — update kategori produk setelah mapping bot.
+    - `POST /api/bridge/webhook/request-update` _(P2a)_ — terima notifikasi perubahan status pencarian produk otonom (`FOUND`, `NOT_FOUND`, `REJECTED`).
 
-    **B. Endpoints di BRIDGE** (disediakan bridge, dipanggil storefront — P2 ke atas):
-    - Belum tersedia. Ditambahkan di P2a (`POST /api/v1/requests`) dan P2b (`POST /api/v1/suppliers`).
+    **B. Endpoints di BRIDGE** (disediakan Bridge, dipanggil Storefront):
+    - `POST /api/v1/requests` _(P2a)_ — inisiasi pencarian produk otonom multi-supplier.
+    - `GET /api/v1/requests/{id}` _(P2a)_ — cek status dan detail quotation penawaran terbaik.
+    - `POST /api/v1/requests/{id}/confirm` _(P2a)_ — konfirmasi pembelian instan setelah penawaran diterima.
 
-    **Catatan penting tentang `product_id` sejak v1.1:**
-    Field ini di-resolve dari tabel `ProductMapping` bridge. Jika produk belum dimapping
-    (admin belum menjalankan `/map` di bot), nilai akan menjadi `[UNMAPPED]`. Storefront
-    sebaiknya balas 400 agar bridge menandai transaksi sebagai `NEEDS_REVIEW`.
+    **Supplier Terdaftar & Didukung:**
+    - `RZK` — Rezeki Shop (IDR)
+    - `PDA` — Prime Digital AI (USD)
+    - `DAI` — Digital AI Store (USD)
 
 servers:
-  - url: https://vendinglink.txsiber.online
-    description: VendingLink Storefront (Production)
   - url: https://bridge.txsiber.online
     description: VendingLink Bridge (Production)
+  - url: http://localhost:3000
+    description: VendingLink Bridge (Local Development / Sandbox)
+  - url: https://vendinglink.txsiber.online
+    description: VendingLink Storefront (Production)
+  - url: http://localhost:3001
+    description: VendingLink Storefront (Local Development / Sandbox)
 
 tags:
-  - name: Storefront Ingress
-    description: Endpoint di storefront yang dipanggil oleh bridge
   - name: Bridge Ingress
-    description: Endpoint di bridge yang dipanggil oleh storefront (P2+, belum tersedia)
+    description: Endpoint di Bridge yang dipanggil oleh Storefront (P2a Agentic Purchasing)
+  - name: Storefront Ingress
+    description: Endpoint di Storefront yang dipanggil oleh Bridge (Stock Topup & Request Updates)
 
 paths:
+  # =========================================================================
+  # BRIDGE INGRESS (Storefront -> Bridge)
+  # =========================================================================
+  /api/v1/requests:
+    post:
+      tags: [Bridge Ingress]
+      summary: Submit Autonomous Product Request (P2a)
+      description: |
+        Storefront memanggil endpoint ini ketika pelanggan meminta produk atau voucher tertentu yang belum ada di katalog lokal.
+        Bridge secara asinkron memproses pencarian paralel ke seluruh supplier aktif (RZK, PDA, DAI) dan membandingkan stok & harga terbaik di bawah guardrail belanja.
+      operationId: createProductRequest
+      security:
+        - BridgeBearerAuth: []
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          description: UUID unik request yang dibuat oleh Storefront untuk mencegah duplikasi pencarian.
+          schema:
+            type: string
+            format: uuid
+            example: "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProductRequestPayload'
+      responses:
+        '202':
+          description: Permintaan diterima dan dimasukkan ke antrean pencarian multi-supplier (asinkron).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductRequestCreatedResponse'
+        '200':
+          description: Idempotent replay — request dengan idempotency-key yang sama sudah pernah diproses sebelumnya.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductRequestDetailResponse'
+        '400':
+          description: Bad Request (Header Idempotency-Key hilang atau validasi body gagal).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized (Token Bearer salah atau tidak disertakan).
+
+  /api/v1/requests/{id}:
+    get:
+      tags: [Bridge Ingress]
+      summary: Get Product Request Detail & Quotation (P2a)
+      description: Mengambil status terkini pencarian produk, harga penawaran terbaik (quoted price), dan supplier asal.
+      operationId: getProductRequestDetail
+      security:
+        - BridgeBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: ID unik ProductRequest (CUID).
+          schema:
+            type: string
+            example: "cmv3seh020002nfm8vaf3rd5n"
+      responses:
+        '200':
+          description: Detail ProductRequest berhasil diambil.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductRequestDetailResponse'
+        '404':
+          description: ProductRequest dengan ID tersebut tidak ditemukan.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized.
+
+  /api/v1/requests/{id}/confirm:
+    post:
+      tags: [Bridge Ingress]
+      summary: Confirm Request & Trigger Immediate Purchase (P2a)
+      description: |
+        Dipanggil saat pelanggan atau admin menyetujui quotation harga produk yang ditemukan.
+        Bridge segera membuat transaksi pembelian ke supplier terbaik dan memasukkan pekerjaan ke antrean eksekusi order.
+      operationId: confirmProductRequest
+      security:
+        - BridgeBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: ID unik ProductRequest (CUID).
+          schema:
+            type: string
+            example: "cmv3seh020002nfm8vaf3rd5n"
+      responses:
+        '200':
+          description: Request dikonfirmasi dan order pembelian telah dimasukkan ke antrean eksekusi.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConfirmProductRequestResponse'
+        '400':
+          description: Request tidak dalam status 'FOUND' atau detail supplier belum tersedia.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: ProductRequest tidak ditemukan.
+        '401':
+          description: Unauthorized.
+
+  # =========================================================================
+  # STOREFRONT INGRESS (Bridge -> Storefront)
+  # =========================================================================
+  /api/bridge/webhook/request-update:
+    post:
+      tags: [Storefront Ingress]
+      summary: Receive Product Request Status Update (P2a)
+      description: |
+        Webhook di Storefront yang dipanggil oleh Bridge worker ketika status pencarian produk berubah:
+        - `FOUND`: Produk ditemukan dengan penawaran harga termurah dan stok tersedia.
+        - `NOT_FOUND`: Produk tidak ditemukan atau melebihi plafon `maxBudget`.
+        - `REJECTED`: Permintaan ditolak oleh guardrail belanja otonom (kill-switch, allowlist, atau batas plafon).
+      operationId: receiveRequestUpdate
+      security:
+        - BridgeBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RequestUpdateWebhookPayload'
+      responses:
+        '200':
+          description: Notifikasi status berhasil diterima oleh Storefront.
+        '401':
+          description: Unauthorized.
+
   /api/bridge/webhook/stock/topup:
     post:
       tags: [Storefront Ingress]
@@ -39,20 +191,20 @@ paths:
       description: |
         Menerima lisensi/serial/akun yang telah berhasil dibeli oleh Bridge Bot dari supplier.
 
-        **Wajib**: Implementasikan verifikasi idempotency menggunakan header `Idempotency-Key`
-        agar retry dari worker bridge tidak menduplikasi penambahan stok.
+        **Idempotency-Key**: Wajib sama dengan `transaction_id` di body payload.
+        Storefront menggunakan `transaction_id` sebagai kunci dedupe database.
 
-        **Tentang `product_id`**: Sejak v1.1, nilai ini di-resolve dari tabel `ProductMapping`.
-        Jika admin belum mendaftarkan mapping via `/map`, nilai akan `[UNMAPPED]`. Balas 400
-        agar bridge menandai transaksi sebagai `NEEDS_REVIEW` untuk investigasi manual.
+        **Tentang `product_id`**: Di-resolve dari tabel `ProductMapping` bridge.
+        Jika belum dimapping via `/map`, bernilai `[UNMAPPED]` dan storefront akan menolak
+        dengan HTTP 400 (`PRODUCT_NOT_MAPPED`), sehingga Bridge menandai transaksi sebagai `NEEDS_REVIEW`.
       operationId: receiveStockTopup
       security:
         - BridgeBearerAuth: []
       parameters:
         - name: Idempotency-Key
           in: header
-          required: true
-          description: Unique Transaction ID (format `BRG-YYYYMMDD-XXXXXX`) untuk mencegah duplikasi.
+          required: false
+          description: Unique Transaction ID (format `BRG-YYYYMMDD-XXXXXX`). Jika disertakan, wajib identik dengan `transaction_id` di body.
           schema:
             type: string
             example: "BRG-20261006-EP1IC0"
@@ -63,7 +215,7 @@ paths:
             schema:
               $ref: '#/components/schemas/StockTopupPayload'
       responses:
-        '200':
+        '201':
           description: Berhasil memproses dan menyimpan stok ke inventaris VendingLink.
           content:
             application/json:
@@ -71,8 +223,9 @@ paths:
                 $ref: '#/components/schemas/StockTopupSuccessResponse'
         '409':
           description: |
-            **Idempotent replay**: Transaksi ini sudah pernah diproses sebelumnya. 
-            Bridge menganggap response 409 sebagai sukses dan tidak akan mengulang pengiriman.
+            **Idempotent replay**: Transaksi ini sudah pernah diproses sebelumnya.
+            - Jika event `status === 'COMPLETED'`, Bridge menganggap sukses mutlak (idempotent ack).
+            - Jika event `status === 'PROCESSING'`, Bridge melakukan retry secara periodik hingga tuntas.
           content:
             application/json:
               schema:
@@ -94,13 +247,10 @@ paths:
   /api/bridge/products/{vlProductId}/category:
     patch:
       tags: [Storefront Ingress]
-      summary: Set Product Category (baru v1.1 / P0)
+      summary: Set Product Category
       description: |
         Dipanggil oleh bridge setelah mapping produk berhasil (`/map` di bot), untuk mengaitkan
         `vlProductId` ke kategori yang ada di katalog storefront.
-
-        Bridge memanggil ini secara opsional — jika storefront mengembalikan 404, bridge log
-        warning tapi tidak gagal. Storefront boleh mengimplementasikan bertahap (task ST-5b).
 
         Operasi ini idempotent by design (PATCH), tidak perlu Idempotency-Key.
       operationId: setProductCategory
@@ -135,9 +285,7 @@ paths:
                     type: string
                     example: "design-tools"
         '404':
-          description: |
-            `vlProductId` tidak ditemukan di katalog storefront. Bridge log warning tapi tidak
-            gagal — admin perlu sinkronisasi mapping secara manual.
+          description: `vlProductId` tidak ditemukan di katalog storefront.
           content:
             application/json:
               schema:
@@ -151,6 +299,9 @@ paths:
         '401':
           description: Unauthorized.
 
+# ===========================================================================
+# COMPONENTS & SCHEMAS
+# ===========================================================================
 components:
   securitySchemes:
     BridgeBearerAuth:
@@ -159,6 +310,159 @@ components:
       description: Secret key yang disepakati bersama (`BRIDGE_SECRET_KEY` di file `.env`).
 
   schemas:
+    CreateProductRequestPayload:
+      type: object
+      required:
+        - customerRef
+        - query
+      properties:
+        customerRef:
+          type: string
+          description: Opaque customer reference identifier (bukan PII, bukan nomor HP langsung).
+          example: "cust_cuid_98765"
+        query:
+          type: string
+          description: Kata kunci produk yang dicari pelanggan.
+          example: "ChatGPT Plus 1 Bulan"
+        categorySlug:
+          type: string
+          description: Kategori produk opsional untuk pemfilteran.
+          example: "ai-tools"
+        maxBudget:
+          type: number
+          description: Plafon harga maksimum yang disetujui pelanggan (dalam IDR).
+          example: 350000
+
+    ProductRequestCreatedResponse:
+      type: object
+      required:
+        - requestId
+        - status
+      properties:
+        requestId:
+          type: string
+          example: "cmv3seh020002nfm8vaf3rd5n"
+        status:
+          type: string
+          enum: [SEARCHING]
+          example: "SEARCHING"
+
+    ProductRequestDetailResponse:
+      type: object
+      required:
+        - requestId
+        - customerRef
+        - status
+        - query
+      properties:
+        requestId:
+          type: string
+          example: "cmv3seh020002nfm8vaf3rd5n"
+        customerRef:
+          type: string
+          example: "cust_cuid_98765"
+        status:
+          type: string
+          enum: [SEARCHING, FOUND, NOT_FOUND, CONFIRMED, PURCHASED, EXPIRED, REJECTED]
+          example: "FOUND"
+        query:
+          type: string
+          example: "ChatGPT Plus 1 Bulan"
+        categorySlug:
+          type: string
+          nullable: true
+          example: "ai-tools"
+        maxBudget:
+          type: number
+          nullable: true
+          example: 350000
+        foundSupplierCode:
+          type: string
+          nullable: true
+          example: "DAI"
+        foundProductId:
+          type: string
+          nullable: true
+          example: "chatgpt:plus_1m"
+        quotedPrice:
+          type: number
+          nullable: true
+          example: 18.5
+        rejectionReason:
+          type: string
+          nullable: true
+          example: null
+        transactionId:
+          type: string
+          nullable: true
+          example: "BRG-20261011-P2A001"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    ConfirmProductRequestResponse:
+      type: object
+      required:
+        - requestId
+        - status
+        - transactionId
+      properties:
+        requestId:
+          type: string
+          example: "cmv3seh020002nfm8vaf3rd5n"
+        status:
+          type: string
+          enum: [CONFIRMED, PURCHASED]
+          example: "CONFIRMED"
+        transactionId:
+          type: string
+          example: "BRG-20261011-P2A001"
+
+    RequestUpdateWebhookPayload:
+      type: object
+      required:
+        - requestId
+        - customerRef
+        - status
+        - query
+      properties:
+        requestId:
+          type: string
+          example: "cmv3seh020002nfm8vaf3rd5n"
+        customerRef:
+          type: string
+          example: "cust_cuid_98765"
+        status:
+          type: string
+          enum: [FOUND, NOT_FOUND, REJECTED, CONFIRMED, PURCHASED, EXPIRED]
+          example: "FOUND"
+        query:
+          type: string
+          example: "ChatGPT Plus 1 Bulan"
+        categorySlug:
+          type: string
+          nullable: true
+          example: "ai-tools"
+        foundSupplierCode:
+          type: string
+          nullable: true
+          example: "DAI"
+        foundProductId:
+          type: string
+          nullable: true
+          example: "chatgpt:plus_1m"
+        quotedPrice:
+          type: number
+          nullable: true
+          example: 18.5
+        rejectionReason:
+          type: string
+          nullable: true
+          example: null
+
     StockTopupPayload:
       type: object
       required:
@@ -183,12 +487,12 @@ components:
           example: "vl-product-456"
         supplier_code:
           type: string
-          description: Kode supplier asal
-          example: "RZK"
+          description: Kode supplier asal (RZK, PDA, DAI)
+          example: "DAI"
         supplier_product_id:
           type: string
           description: SKU / ID produk asli di sisi supplier
-          example: "loc_test1"
+          example: "chatgpt:plus_1m"
         added_qty:
           type: integer
           minimum: 1
@@ -198,9 +502,8 @@ components:
           type: array
           items:
             type: string
-          description: Daftar lisensi, serial number, atau akun hasil pembelian
-          example:
-            - "TEST-LICENSE-KEY-1234-ABCD"
+          description: Array lisensi / serial / akun
+          example: ["Email: buyer@example.com | Password: secretPassword123 | 2FA: JBSWY3DPEHPK3PXP"]
         source:
           type: string
           enum: [BRIDGE_BOT]
@@ -213,29 +516,37 @@ components:
       properties:
         categorySlug:
           type: string
-          description: Slug kategori yang sudah ada di katalog storefront.
-          example: "design-tools"
-        tags:
-          type: array
-          items:
-            type: string
-          description: Tag opsional dari supplier API untuk keperluan filter/search.
-          example: ["productivity", "saas"]
+          description: Slug kategori di katalog VendingLink
+          example: "ai-tools"
 
     StockTopupSuccessResponse:
       type: object
       required:
-        - success
+        - status
+        - message
       properties:
-        success:
-          type: boolean
-          example: true
+        status:
+          type: integer
+          example: 201
         message:
           type: string
-          example: "Stock successfully updated"
-        current_stock:
+          example: "Top-up successful"
+        inserted:
           type: integer
-          example: 15
+          example: 1
+        skipped:
+          type: integer
+          example: 0
+        existingEvent:
+          type: object
+          properties:
+            id:
+              type: string
+              example: "evt_12345"
+            status:
+              type: string
+              enum: [COMPLETED, PROCESSING, REJECTED]
+              example: "COMPLETED"
 
     ErrorResponse:
       type: object
@@ -244,4 +555,17 @@ components:
       properties:
         error:
           type: string
-          example: "Product [UNMAPPED] not found in catalog"
+          description: Machine-readable error code.
+          example: "PRODUCT_NOT_MAPPED"
+        message:
+          type: string
+          description: Human-readable description.
+          example: "supplier_product_id 'loc_test1' (RZK) has no catalog mapping"
+        supplier_code:
+          type: string
+          description: Present when error is PRODUCT_NOT_MAPPED.
+          example: "RZK"
+        supplier_product_id:
+          type: string
+          description: Present when error is PRODUCT_NOT_MAPPED.
+          example: "loc_test1"

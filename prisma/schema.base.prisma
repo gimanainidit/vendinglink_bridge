@@ -79,3 +79,36 @@ model ProductMapping {
   @@id([supplierCode, supplierProductId])
   @@index([vlProductId])
 }
+
+enum ProductRequestStatus {
+  SEARCHING
+  FOUND
+  NOT_FOUND
+  CONFIRMED
+  PURCHASED
+  EXPIRED
+  REJECTED
+}
+
+model ProductRequest {
+  id                String               @id @default(cuid())
+  customerRef       String               // opaque ID storefront, BUKAN PII
+  idempotencyKey    String               @unique
+  query             String
+  categorySlug      String?
+  maxBudget         Float?
+  status            ProductRequestStatus @default(SEARCHING)
+  foundSupplierCode String?
+  foundProductId    String?
+  quotedPrice       Float?
+  notifiedAt        DateTime?
+  confirmedAt       DateTime?
+  transactionId     String?
+  rejectionReason   String?
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+
+  @@index([status, createdAt])
+  @@index([customerRef])
+}
+

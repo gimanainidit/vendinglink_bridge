@@ -5,6 +5,7 @@ import { logger } from '../lib/logger';
 import { supplierFactory } from '../suppliers/SupplierFactory';
 import { env } from '../config/env';
 import { prisma } from '../db';
+import { agentGuardrailService } from '../services/agentGuardrailService';
 
 // Stubs for controllers (to be implemented in Phase 2)
 const listController = async (ctx: MyContext, supplierCode: string, search?: string) => {
@@ -23,11 +24,12 @@ const listController = async (ctx: MyContext, supplierCode: string, search?: str
       const status = p.availability === 'in_stock' ? '✅' : '❌';
       const emailBadge = p.requiresEmail ? ' 📧' : '';
       const safeName = p.name.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-      msg += `${status} <code>${p.id}</code> - ${safeName}${emailBadge} - Rp${p.price?.toLocaleString('id-ID') || '?'}\n`;
+      const formattedPrice = p.currency === 'USD' ? `$${p.price?.toFixed(2)} USD` : `Rp${p.price?.toLocaleString('id-ID') || '?'}`;
+      msg += `${status} <code>${p.id}</code> - ${safeName}${emailBadge} - ${formattedPrice}\n`;
     }
     
     if (products.length > 15) {
-      msg += `\n<i>...and ${products.length - 15} more. Gunakan: /list RZK &lt;keyword&gt; untuk filter.</i>`;
+      msg += `\n<i>...and ${products.length - 15} more. Gunakan: /list ${adapter.code} &lt;keyword&gt; untuk filter.</i>`;
     }
     
     await ctx.reply(msg, { parse_mode: 'HTML' });
@@ -60,19 +62,36 @@ const buyPreCheck = async (ctx: MyContext, supplierCode: string, productId: stri
 
     const price = product.price || 0;
     const total = price * qty;
-    
+
     // Check balance
     const balance = await adapter.getBalance();
 
+    // --- BR-5e: early mapping warning ---
+    // Show advisory BEFORE the Confirm button so admin can /map first.
+    // Hard block runs again at enqueue time in confirmBuy.ts.
+    const mapping = await prisma.productMapping.findUnique({
+      where: {
+        supplierCode_supplierProductId: { supplierCode: adapter.code, supplierProductId: productId },
+      },
+    });
+    const mappingWarning = mapping
+      ? ''
+      : `\n⚠️ *Produk belum dimapping\\!* Jalankan dulu:\n/map ${adapter.code} ${productId} <VL_PRODUCT_ID>\nJika dilanjutkan, transaksi akan parkir di NEEDS_REVIEW sampai dimapping & di-retry.\n`;
+
+    const totalFormatted = adapter.code === 'PDA' ? `$${total.toFixed(2)} USD` : `Rp${total.toLocaleString('id-ID')}`;
+    const balanceBeforeFormatted = adapter.code === 'PDA' ? `$${balance.toFixed(2)} USD` : `Rp${balance.toLocaleString('id-ID')}`;
+    const balanceAfterFormatted = adapter.code === 'PDA' ? `$${(balance - total).toFixed(2)} USD` : `Rp${(balance - total).toLocaleString('id-ID')}`;
+
     let msg = `🛒 *Confirm Purchase*\n\n`;
-    msg += `Supplier: ${adapter.displayName}\n`;
+    msg += `Supplier: ${adapter.displayName} (${adapter.code})\n`;
     msg += `Product: ${product.name}\n`;
     msg += `Qty: ${qty}\n`;
     if (emails && emails.length > 0) {
       msg += `Emails: ${emails.join(', ')}\n`;
     }
-    msg += `Total: Rp${total.toLocaleString('id-ID')}\n`;
-    msg += `Balance: Rp${balance.toLocaleString('id-ID')} → Rp${(balance - total).toLocaleString('id-ID')}\n`;
+    msg += `Total: ${totalFormatted}\n`;
+    msg += `Balance: ${balanceBeforeFormatted} → ${balanceAfterFormatted}\n`;
+    msg += mappingWarning;
 
     if (balance < total) {
       await ctx.reply(`❌ Insufficient balance! \n${msg}`, { parse_mode: 'Markdown' });
@@ -188,9 +207,50 @@ export const handleTextMessage = async (ctx: MyContext) => {
         break;
       }
       case 'balance': {
-        const adapter = supplierFactory.getAdapter(command.supplierCode!);
+        if (!command.supplierCode || command.supplierCode === 'ALL') {
+          const adapters = supplierFactory.getAllAdapters();
+          let msg = `💰 *Multi-Supplier Balances:*\n\n`;
+          for (const adapter of adapters) {
+            try {
+              const bal = await adapter.getBalance();
+              const formatted = (adapter.code === 'PDA' || adapter.code === 'DAI') ? `$${bal.toFixed(2)} USD` : `Rp${bal.toLocaleString('id-ID')}`;
+              msg += `• *${adapter.displayName}* (\`${adapter.code}\`): ${formatted}\n`;
+            } catch (err: any) {
+              msg += `• *${adapter.displayName}* (\`${adapter.code}\`): ⚠️ Error (${err.message})\n`;
+            }
+          }
+          await ctx.reply(msg, { parse_mode: 'Markdown' });
+          break;
+        }
+
+        const adapter = supplierFactory.getAdapter(command.supplierCode);
         const bal = await adapter.getBalance();
-        await ctx.reply(`💰 *${adapter.displayName} Balance:*\nRp${bal.toLocaleString('id-ID')}`, { parse_mode: 'Markdown' });
+        const formatted = (adapter.code === 'PDA' || adapter.code === 'DAI') ? `$${bal.toFixed(2)} USD` : `Rp${bal.toLocaleString('id-ID')}`;
+        await ctx.reply(`💰 *${adapter.displayName} Balance:*\n${formatted}`, { parse_mode: 'Markdown' });
+        break;
+      }
+      case 'agent': {
+        const action = command.search || 'status';
+        if (action === 'pause') {
+          agentGuardrailService.setPaused(true);
+          await ctx.reply('⏸️ *Autonomous Purchasing Agent PAUSED*.\nEmergency kill switch engaged. Inbound requests will be rejected until resumed.', { parse_mode: 'Markdown' });
+        } else if (action === 'resume') {
+          agentGuardrailService.setPaused(false);
+          await ctx.reply('▶️ *Autonomous Purchasing Agent RESUMED*.\nAgent is now accepting requests and evaluating offers.', { parse_mode: 'Markdown' });
+        } else {
+          const s = agentGuardrailService.getSettings();
+          await ctx.reply(
+            `🤖 *Agent Guardrail Settings (P2a)*:\n\n` +
+            `• Status: ${s.paused ? '⏸️ *PAUSED*' : s.enabled ? '✅ *ACTIVE*' : '❌ *DISABLED*'}\n` +
+            `• Per-Request Cap: Rp${s.maxSpendPerRequest.toLocaleString('id-ID')}\n` +
+            `• Daily Spend Cap: Rp${s.maxSpendPerDay.toLocaleString('id-ID')}\n` +
+            `• Min Balance Floor: Rp${s.minBalanceFloor.toLocaleString('id-ID')}\n` +
+            `• Allowed Suppliers: \`${s.allowedSuppliers.join(', ')}\`\n` +
+            `• High Value Threshold: Rp${s.highValueThreshold.toLocaleString('id-ID')}\n\n` +
+            `Use \`/agent pause\` or \`/agent resume\` to control kill switch.`,
+            { parse_mode: 'Markdown' }
+          );
+        }
         break;
       }
       case 'retry': {
@@ -255,7 +315,8 @@ export const handleTextMessage = async (ctx: MyContext) => {
           'Commands:\n' +
           '• `/list <SUPPLIER> [search]` - List products\n' +
           '• `/buy <SUPPLIER> <PRODUCT_ID> <QTY> [emails]` - Buy products\n' +
-          '• `/balance <SUPPLIER>` - Check balance\n' +
+          '• `/balance [SUPPLIER|ALL]` - Check balances across suppliers\n' +
+          '• `/agent [pause|resume|status]` - Control autonomous procurement kill switch\n' +
           '• `/status <TX_ID>` - Check tx status\n' +
           '• `/pending` - List pending tx\n' +
           '• `/retry <TX_ID>` - Force retry to VendingLink\n' +

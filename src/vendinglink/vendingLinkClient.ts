@@ -56,8 +56,18 @@ export const deliverToVendingLink = async (
 
     await appendLog(transactionId, 'VENDING_RES', resData || { error: err.message }, status, duration);
 
-    // 409 Conflict typically means "Already processed this idempotency key", which is a success from our perspective
-    if (status === 409) return resData;
+    // 409 Conflict handling:
+    // Differentiate between COMPLETED (idempotent success) and PROCESSING (in-flight, retryable)
+    if (status === 409) {
+      const existingStatus = resData?.existingEvent?.status;
+      if (existingStatus === 'PROCESSING') {
+        throw new VendingLinkDeliveryError(
+          `VendingLink event is currently PROCESSING (409 Conflict): retry later.`,
+          true
+        );
+      }
+      return resData;
+    }
 
     // Retry on 5xx, 429, or network errors
     if (!status || status >= 500 || status === 429) {

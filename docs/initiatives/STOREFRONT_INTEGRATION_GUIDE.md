@@ -213,13 +213,14 @@ audit trail.
 
 ## 5. P2a — Agentic Purchasing: Persyaratan Sisi Storefront
 
-**Jangan mulai ST-P2a-* sebelum endpoint bridge P2a selesai dan didokumentasikan di `docs/openapi.yaml`.**
+> **STATUS TERKINI (2026-10-11):** Endpoint bridge P2a **TELAH SELESAI DIIMPLEMENTASI**, lulus pengujian Vitest (47 tests), dan terdokumentasi lengkap di `docs/openapi.yaml` serta Swagger UI (`/swagger`). Tim storefront kini dapat langsung mengimplementasikan task ST-P2a-1 s.d. ST-P2a-4.
 
-### 5.1 Endpoint Bridge Baru (tersedia saat P2a selesai)
+### 5.1 Endpoint Bridge P2a (Aktif di Bridge)
 
 ```
-POST {BRIDGE_URL}/api/v1/requests
-POST {BRIDGE_URL}/api/v1/requests/:id/confirm
+POST {BRIDGE_URL}/api/v1/requests             -- Inisiasi request produk otonom (202 Accepted)
+GET  {BRIDGE_URL}/api/v1/requests/:id         -- Cek status quotation terkini (200 OK)
+POST {BRIDGE_URL}/api/v1/requests/:id/confirm -- Konfirmasi pembelian instan (200 OK)
 ```
 
 ### 5.2 Cara Mengirim Product Request
@@ -227,63 +228,82 @@ POST {BRIDGE_URL}/api/v1/requests/:id/confirm
 ```http
 POST {BRIDGE_URL}/api/v1/requests
 Authorization: Bearer BRIDGE_SECRET_KEY
-Idempotency-Key: <uuid-v4 di-generate storefront>
+Idempotency-Key: <uuid-v4-di-generate-storefront>
 Content-Type: application/json
 
 {
-  "customerRef": "cust_abc123",
+  "customerRef": "cust_cuid_98765",
   "query": "Canva Pro 1 bulan",
   "categorySlug": "design-tools",
   "maxBudget": 150000
 }
 ```
 
-Response sinkron: `{ "requestId": "req_xyz", "status": "SEARCHING" }`
-
-Bridge memproses asinkron (target < 3 menit) lalu mengirim notifikasi via webhook.
-
-### 5.3 Menerima Notifikasi Status dari Bridge
-
-Storefront wajib mengimplementasikan endpoint ini:
-
-```
-POST {STOREFRONT_URL}/api/bridge/webhook/request-update
-Authorization: Bearer BRIDGE_SECRET_KEY
-```
-
-Payload:
+Response sinkron (202 Accepted):
 ```json
 {
-  "requestId": "req_xyz",
-  "status": "FOUND",
-  "customerRef": "cust_abc123",
-  "foundProductId": "prod_vl_456",
-  "quotedPrice": 95000,
-  "supplierCode": "RZK",
-  "idempotencyKey": "<key-asli>"
+  "requestId": "cmv3seh020002nfm8vaf3rd5n",
+  "status": "SEARCHING"
 }
 ```
 
-`status`: `FOUND` | `NOT_FOUND` | `PURCHASED` | `EXPIRED`
+Bridge memproses asinkron melalui antrean BullMQ `productSearchQueue` dengan query paralel ke 3 supplier aktif (`RZK`, `PDA`, `DAI`), lalu mengirimkan hasil ke webhook storefront.
+
+### 5.3 Menerima Notifikasi Status dari Bridge (Webhook)
+
+Storefront wajib menyediakan endpoint ini:
+
+```http
+POST {STOREFRONT_URL}/api/bridge/webhook/request-update
+Authorization: Bearer BRIDGE_SECRET_KEY
+Content-Type: application/json
+```
+
+Payload yang dikirim bridge saat status berubah (`FOUND`, `NOT_FOUND`, `REJECTED`):
+```json
+{
+  "requestId": "cmv3seh020002nfm8vaf3rd5n",
+  "customerRef": "cust_cuid_98765",
+  "status": "FOUND",
+  "query": "Canva Pro 1 bulan",
+  "categorySlug": "design-tools",
+  "foundSupplierCode": "PDA",
+  "foundProductId": "pda_canva",
+  "quotedPrice": 25000,
+  "rejectionReason": null
+}
+```
+
+Status nilai:
+- `FOUND`: Produk ditemukan dengan harga terbaik dan stok tersedia.
+- `NOT_FOUND`: Tidak ada stok atau harga terendah melebihi `maxBudget`.
+- `REJECTED`: Permintaan ditolak guardrail belanja otonom (misal: kill switch aktif, supplier tidak ada di allowlist, plafon belanja harian tercapai).
 
 Storefront wajib:
 - Balas HTTP 200 dalam 10 detik.
-- Proses idempotently via `idempotencyKey`.
-- Teruskan notifikasi ke customer.
-- Simpan `requestId` + `quotedPrice` untuk konfirmasi.
+- Teruskan penawaran harga (`quotedPrice`) ke customer melalui WhatsApp / push notification.
+- Simpan `requestId` untuk konfirmasi jika customer menyetujui.
 
-### 5.4 Konfirmasi Pembelian
+### 5.4 Konfirmasi Pembelian Produk
+
+Ketika customer menekan tombol setuju beli di storefront:
 
 ```http
 POST {BRIDGE_URL}/api/v1/requests/{requestId}/confirm
 Authorization: Bearer BRIDGE_SECRET_KEY
-Idempotency-Key: <uuid-v4 baru>
 Content-Type: application/json
-
-{ "customerRef": "cust_abc123" }
 ```
 
-HTTP 202 berarti bridge menerima. Storefront mendapat webhook lanjutan dengan status `PURCHASED` atau error.
+Response sinkron (200 OK):
+```json
+{
+  "requestId": "cmv3seh020002nfm8vaf3rd5n",
+  "status": "CONFIRMED",
+  "transactionId": "BRG-20261011-P2A001"
+}
+```
+
+Bridge segera membuat transaksi di database, memotong saldo/membeli produk dari supplier terbaik, dan mendistribusikan lisensi kembali ke storefront via webhook `POST /api/bridge/webhook/stock/topup`.
 
 ### 5.5 customerRef adalah Opaque ID
 
@@ -355,12 +375,14 @@ Setiap perubahan kontrak wajib diupdate di `docs/openapi.yaml` dan `VENDINGLINK_
 
 | Endpoint | Arah | Sprint | Status |
 |----------|------|--------|--------|
-| `POST /api/bridge/webhook/stock/topup` | Bridge → Storefront | Existing | Sudah berjalan |
-| `POST /api/v1/requests` | Storefront → Bridge | P2a | Endpoint baru di bridge |
-| `POST /api/v1/requests/:id/confirm` | Storefront → Bridge | P2a | Endpoint baru di bridge |
-| `POST /api/bridge/webhook/request-update` | Bridge → Storefront | P2a | **Endpoint baru di storefront** |
-| `POST /api/v1/suppliers` | Storefront → Bridge | P2b | Endpoint baru di bridge |
-| `PATCH /api/v1/suppliers/:code` | Storefront → Bridge | P2b | Endpoint baru di bridge |
+| `POST /api/bridge/webhook/stock/topup` | Bridge → Storefront | Existing | Sudah berjalan (201 / 409 handled) |
+| `PATCH /api/bridge/products/:vlProductId/category` | Bridge → Storefront | P0 | Siap di Storefront |
+| `POST /api/v1/requests` | Storefront → Bridge | P2a | **Siap & Live di Bridge** (202 Accepted) |
+| `GET /api/v1/requests/:id` | Storefront → Bridge | P2a | **Siap & Live di Bridge** (200 OK) |
+| `POST /api/v1/requests/:id/confirm` | Storefront → Bridge | P2a | **Siap & Live di Bridge** (200 OK) |
+| `POST /api/bridge/webhook/request-update` | Bridge → Storefront | P2a | **Wajib di Storefront** (Client siap di Bridge) |
+| `POST /api/v1/suppliers` | Storefront → Bridge | P2b | Sprint P2b |
+| `PATCH /api/v1/suppliers/:code` | Storefront → Bridge | P2b | Sprint P2b |
 
 ---
 

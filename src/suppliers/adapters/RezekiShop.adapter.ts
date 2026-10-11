@@ -44,6 +44,10 @@ export class RezekiShopAdapter implements ISupplierAdapter {
         availability: p.availability,
         requiresEmail: p.requires_email || false,
         description: p.description || '',
+        categorySlug: p.category_slug ?? p.category ?? undefined,
+        tags: p.tags ?? undefined,
+        currency: 'IDR',
+        supplierCode: this.code,
       }));
     } catch (err: any) {
       throw new Error(`RezekiShop getProductList failed: ${err.message}`);
@@ -64,6 +68,10 @@ export class RezekiShopAdapter implements ISupplierAdapter {
         availability: p.availability,
         requiresEmail: p.requires_email || false,
         description: p.description || '',
+        categorySlug: p.category_slug ?? p.category ?? undefined,
+        tags: p.tags ?? undefined,
+        currency: 'IDR',
+        supplierCode: this.code,
       };
     } catch (err: any) {
       if (err.response?.status === 404) return null;
