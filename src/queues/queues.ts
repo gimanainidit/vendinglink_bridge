@@ -43,3 +43,19 @@ export const supplierReconcileQueue = new Queue('supplier-reconcile', {
     removeOnFail: false,
   },
 });
+
+// 4. Product Search Queue (P2a Agentic Purchasing)
+// Asynchronously queries registered suppliers in parallel to find best offer
+export const productSearchQueue = new Queue('product-search', {
+  connection: redisConnection,
+  defaultJobOptions: {
+    attempts: 3,
+    backoff: {
+      type: 'exponential',
+      delay: 3000,
+    },
+    removeOnComplete: true,
+    removeOnFail: false,
+  },
+});
+

@@ -74,14 +74,16 @@ services:
       POSTGRES_PASSWORD: bridge_pass
       POSTGRES_DB: bridge
       POSTGRES_HOST: postgres
+      BACKUP_ENCRYPTION_KEY: ${BACKUP_ENCRYPTION_KEY}
+      BACKUP_RCLONE_REMOTE: ${BACKUP_RCLONE_REMOTE}
     volumes:
       - ./backups:/backups
+      - ~/.config/rclone:/root/.config/rclone:ro
     depends_on:
       postgres:
         condition: service_healthy
-    # A simple crond that runs pg_dump daily and deletes backups older than 7 days
     command: >
-      sh -c 'echo "0 3 * * * pg_dump -h $$POSTGRES_HOST -U $$POSTGRES_USER -d $$POSTGRES_DB -Fc > /backups/db-$$(date +\%Y\%m\%d).dump && find /backups/ -type f -mtime +7 -name \"*.dump\" -delete" > /etc/crontabs/root && crond -f'
+      sh -c 'apk add --no-cache rclone openssl && echo "0 3 * * * TS=\$$(date +\%Y\%m\%d_\%H\%M\%S) && pg_dump -h \$$POSTGRES_HOST -U \$$POSTGRES_USER -d \$$POSTGRES_DB -Fc > /backups/db-\$$TS.dump && if [ -n \"\$$BACKUP_ENCRYPTION_KEY\" ]; then openssl enc -aes-256-cbc -salt -pbkdf2 -pass env:BACKUP_ENCRYPTION_KEY -in /backups/db-\$$TS.dump -out /backups/db-\$$TS.dump.enc && rm /backups/db-\$$TS.dump; fi && if [ -n \"\$$BACKUP_RCLONE_REMOTE\" ]; then rclone copy /backups/db-\$$TS.dump* \$$BACKUP_RCLONE_REMOTE; fi && find /backups/ -type f -mtime +7 -delete" > /etc/crontabs/root && crond -f'
     networks:
       - bridge_net
 

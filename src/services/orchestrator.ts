@@ -1,8 +1,6 @@
 import { supplierFactory } from '../suppliers/SupplierFactory';
-import { createTransaction, updateTransactionStatus } from './transactionService';
-import { encryptKeys } from '../lib/crypto';
+import { createTransaction } from './transactionService';
 import { logger } from '../lib/logger';
-import { env } from '../config/env';
 import { prisma } from '../db';
 
 /**

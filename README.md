@@ -52,9 +52,16 @@ BRIDGE_SECRET_KEY=shared_secret_with_vendinglink
 # WARNING: do NOT use the placeholder below. Replace it with the generated value.
 KEYS_ENCRYPTION_KEY=<replace-with-output-of-openssl-rand-base64-32>
 
-# Supplier (Rezeki Shop)
+# Suppliers
+# Rezeki Shop (RZK)
 SUPPLIER_RZK_BASE_URL=https://api.prastyaaneki.biz.id
 SUPPLIER_RZK_API_KEY=sk_live_your_actual_key_here
+# Prime Digital AI (PDA)
+SUPPLIER_PDA_BASE_URL=https://prime-digital-ai.com
+SUPPLIER_PDA_API_KEY=psk_your_actual_key_here
+# Digital AI Store (DAI) - Alias SUPLIER_DAI_BASE_URL & DAI_API_KEY supported
+SUPPLIER_DAI_BASE_URL=http://43.156.46.152:8000
+SUPPLIER_DAI_API_KEY=your_reseller_api_key_here
 ```
 
 ### 4. Start Local Redis
@@ -183,13 +190,14 @@ Only Telegram User IDs specified in `ADMIN_TELEGRAM_ID` can interact with the bo
 | Command | Description | Example |
 | :--- | :--- | :--- |
 | `/start` or `/help` | Display list of available commands and format | `/help` |
-| `/balance <SUPPLIER>` | Check real-time wallet balance at supplier | `/balance RZK` |
+| `/balance [SUPPLIER\|ALL]` | Check real-time wallet balance at supplier or all configured suppliers | `/balance ALL` |
 | `/list <SUPPLIER> [search]` | List available products (or search keyword) | `/list RZK canva` |
 | `/buy <SUPPLIER> <ID> <QTY> [email]` | Initiate product purchase with pre-check | `/buy RZK loc_test1 1` |
 | `/status <TX_ID>` | Check execution status of a transaction | `/status tx_12345` |
 | `/pending` | List the last 10 pending/in-progress transactions | `/pending` |
 | `/retry <TX_ID>` | Force manual delivery retry to VendingLink | `/retry tx_12345` |
 | `/map <SUPPLIER> <SUPPLIER_PRODUCT_ID> <VL_PRODUCT_ID>` | Register or update a product mapping | `/map RZK prod_rzk_123 vl-product-456` |
+| `/agent <status\|pause\|resume>` | Control or monitor automated procurement agent guardrails | `/agent pause` |
 
 ---
 

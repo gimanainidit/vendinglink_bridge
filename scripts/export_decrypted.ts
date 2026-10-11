@@ -30,14 +30,27 @@ async function exportDecryptedData() {
     };
   });
 
-  const outputPath = path.join(process.cwd(), 'backups', 'decrypted_transactions.json');
-  
-  if (!fs.existsSync(path.join(process.cwd(), 'backups'))) {
-    fs.mkdirSync(path.join(process.cwd(), 'backups'));
+  const isPlaintext = process.argv.includes('--plaintext');
+  const backupDir = path.join(process.cwd(), 'backups');
+  if (!fs.existsSync(backupDir)) {
+    fs.mkdirSync(backupDir, { recursive: true });
   }
 
-  fs.writeFileSync(outputPath, JSON.stringify(decryptedTransactions, null, 2));
-  console.log(`\n✅ Export success! File saved to: ${outputPath}`);
+  if (isPlaintext) {
+    const outputPath = path.join(backupDir, 'decrypted_transactions.json');
+    fs.writeFileSync(outputPath, JSON.stringify(decryptedTransactions, null, 2));
+    console.warn(`\n⚠️  WARNING: Plaintext export explicitly enabled via --plaintext flag.`);
+    console.log(`✅ Export success! File saved to: ${outputPath}`);
+  } else {
+    const { encryptKeys } = await import('../src/lib/crypto');
+    const jsonString = JSON.stringify(decryptedTransactions, null, 2);
+    const encryptedData = encryptKeys([jsonString]);
+    const outputPath = path.join(backupDir, 'decrypted_transactions.enc.json');
+    fs.writeFileSync(outputPath, JSON.stringify({ encryptedData, exportedAt: new Date().toISOString() }, null, 2));
+    console.log(`\n🔒 Export success! Output is ENCRYPTED with KEYS_ENCRYPTION_KEY.`);
+    console.log(`File saved to: ${outputPath}`);
+    console.log(`(To export unencrypted JSON, re-run with explicit --plaintext flag)`);
+  }
 }
 
 exportDecryptedData()
