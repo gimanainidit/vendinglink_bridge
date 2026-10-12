@@ -62,14 +62,13 @@ Setiap perubahan kontrak wajib direvisi di kedua dokumen sebelum implementasi.
 
 ## 2. Versi & Status Roadmap
 
-| Versi | Nama                                      | Status             | Sprint Target |
-|-------|-------------------------------------------|--------------------|---------------|
-| v1.0  | Foundation                                | CLOSED · VERIFIED  | Selesai       |
-| v1.1  | Ketahanan Data & Fondasi Katalog (P0)     | CLOSED · VERIFIED  | Sprint 1      |
-| v1.2  | Program Promo & Loyalitas (P1)            | HANDOFF ALIGNED    | Sprint 2-3    |
-| v2.0  | Agentic Purchasing Core (P2a)             | CLOSED · VERIFIED  | Sprint 4      |
-| v2.1  | Dynamic Supplier Management (P2b)         | IN PROGRESS        | Sprint 5-6    |
-| v3.x  | Long-Term / P3                            | OPTIONAL · GATED   | TBD           |
+| Versi | Nama                                      | Status                      | Sprint Target |
+|-------|-------------------------------------------|-----------------------------|---------------|
+| v1.0  | Foundation                                | CLOSED · VERIFIED           | Selesai       |
+| v1.1  | Ketahanan Data & Fondasi Katalog (P0)     | CLOSED · VERIFIED           | Sprint 1      |
+| v1.2  | Program Promo & Loyalitas (P1)            | CLOSED · VERIFIED           | Sprint 2      |
+| v2.0  | Agentic Purchasing & Supplier Dinamis (P2)| IN PROGRESS (P2a VERIFIED)  | Sprint 3 (P2a)|
+| v3.x  | Long-Term / P3                            | OPTIONAL · GATED            | TBD           |
 
 ---
 
@@ -466,13 +465,17 @@ Admin UI Storefront: Manajemen Supplier
     v
     POST /api/v1/suppliers  (bridge)
     Simpan Supplier(PENDING_VALIDATION)
-    Worker: dry-run getProductList + getBalance
+    Worker: dry-run getProductList + getBalance (GenericRestAdapter)
     |
     +-- OK   -> status ACTIVE, notif Telegram
-    +-- FAIL -> panggil LLM agent (feature-flagged)
-                Output: kandidat adapter TypeScript -> DRAFT PR (BUKAN hot-load)
-                Notif Telegram: link PR untuk review
-                Setelah merge + rebuild -> supplier aktif
+    +-- FAIL -> Redaction/Sanitizer (masking token & credentials)
+                -> Enqueue job ke Hermes Agent Runner (VPS/Worker mandiri di luar Vercel/Bridge)
+                -> Hermes panggil Commercial LLM (Claude 3.5 Sonnet / GPT-4o)
+                -> Generate `SupplierAdapter.ts` + Vitest mock test di sandbox
+                -> Jalankan `npm test` di isolated container
+                -> Lulus test -> Push branch & Open GitHub DRAFT PR
+                -> Notif Telegram: link Draft PR untuk review developer
+                -> Developer review & merge PR -> CI/CD rebuild -> status ACTIVE
 ```
 
 **Skema baru di `prisma/schema.base.prisma`:**
@@ -494,26 +497,27 @@ enum SupplierStatus {
 }
 ```
 
-**Batasan keamanan agentic adapter (MUTLAK):**
-LLM output tidak pernah di-eval atau hot-load di runtime. Output berupa TypeScript file
-yang masuk sebagai **draft PR**, di-review developer, di-merge, baru rebuild Docker.
-PR wajib lulus `tsc --noEmit` dan dry-run test sebelum merge.
+**Batasan keamanan & isolasi agentic adapter (MUTLAK):**
+1. **Isolated Worker (Zero Blast Radius):** Hermes Agent berjalan di VPS/worker terpisah di luar Vercel (Storefront) dan Bridge transaksi. Kegagalan agent tidak mempengaruhi operasional customer.
+2. **Data Redaction:** Sebelum prompt/doc supplier dikirim ke LLM API, layer Sanitizer otomatis memotong/me-masking seluruh secret, signature key, dan password menjadi dummy `<MOCK_SECRET>`.
+3. **No Hot-Reloading:** LLM output tidak pernah di-eval atau hot-load di runtime. Output berupa TypeScript file yang masuk sebagai **GitHub Draft PR**, di-review developer, di-merge, baru rebuild Docker.
+4. **Automated Verification:** PR wajib lulus `tsc --noEmit` dan Vitest dry-run test di sandbox sebelum PR dibuat.
 
 **Pekerjaan bridge P2b:**
 
-- [ ] BR-P2b-1: Migrasi schema `Supplier` + enum ke `schema.base.prisma`.
-- [ ] BR-P2b-2: `GenericRestAdapter` — `ISupplierAdapter` berbasis descriptor JSON.
-- [ ] BR-P2b-3: Update `SupplierFactory` — load dari tabel `Supplier` (DB), RZK hardcode sebagai fallback.
-- [ ] BR-P2b-4: `POST /api/v1/suppliers` + `PATCH /api/v1/suppliers/:code` dengan Bearer auth.
-- [ ] BR-P2b-5: Validation worker — dry-run saat supplier baru didaftarkan.
-- [ ] BR-P2b-6: LLM integration (feature-flagged `AGENT_ADAPTER_BUILD_ENABLED`) — draft PR + notif link.
-- [ ] BR-P2b-7: Command `/suppliers` — list semua supplier dan statusnya.
-- [ ] BR-P2b-8: `SUPPLIER_RZK_*` di `env.ts` jadi deprecated (baca tapi tidak required, backward-compat).
+- [x] BR-P2b-1: Migrasi schema `Supplier` + enum ke `schema.base.prisma`.
+- [x] BR-P2b-2: `GenericRestAdapter` — `ISupplierAdapter` berbasis descriptor JSON.
+- [x] BR-P2b-3: Update `SupplierFactory` — load dari tabel `Supplier` (DB), RZK hardcode sebagai fallback.
+- [x] BR-P2b-4: `POST /api/v1/suppliers` + `PATCH /api/v1/suppliers/:code` dengan Bearer auth.
+- [x] BR-P2b-5: Validation worker — dry-run saat supplier baru didaftarkan.
+- [ ] BR-P2b-6: Hermes Agent adapter builder pipeline (feature-flagged `AGENT_ADAPTER_BUILD_ENABLED`) — sanitizer layer, sandbox Vitest runner, GitHub API Draft PR creator, notif link PR ke Telegram.
+- [x] BR-P2b-7: Command `/suppliers` — list semua supplier dan statusnya.
+- [x] BR-P2b-8: `SUPPLIER_RZK_*` di `env.ts` jadi deprecated (baca tapi tidak required, backward-compat).
 
 **Pekerjaan storefront P2b:**
 
-- [ ] ST-P2b-1: UI Manajemen Supplier — form tambah, upload descriptor, lihat status validasi.
-- [ ] ST-P2b-2: Tentukan ownership enkripsi credentials (storefront atau bridge) dan dokumentasikan.
+- [x] ST-P2b-1: UI Manajemen Supplier — form tambah, upload descriptor, lihat status validasi.
+- [x] ST-P2b-2: Tentukan ownership enkripsi credentials (storefront atau bridge) dan dokumentasikan.
 
 **Acceptance criteria P2b:**
 - Tambah supplier baru dari UI tanpa deploy ulang (untuk supplier dengan descriptor valid).
@@ -604,8 +608,8 @@ jika tidak dijawab.
 | Q1 | Integrasi Google Drive yang "rusak" — kode tidak ditemukan di repo bridge. Di mana kode tersebut berada? (VPS script? Storefront?) Perlu diidentifikasi sebelum BR-8a bisa dirancang final. | P0 (BR-8a) | Admin/DevOps |
 | Q2 | Storefront VendingLink: framework apa, repo di mana? Semua task ST-* dalam roadmap ini perlu akses ke repo storefront untuk dieksekusi. | P0 (ST-5a) | Storefront maintainer |
 | Q3 | N hari window refund untuk ReferralReward ACCRUED -> PAYABLE? Ini keputusan bisnis, bukan teknis. | P1 (ST-2e) | Owner bisnis |
-| Q4 | AGENT_MAX_SPEND_PER_REQUEST dan _PER_DAY — berapa angka yang tepat? Ditentukan bersamaan dengan eksperimen operasional P2a. | P2a (BR-P2a-3) | Owner bisnis |
-| Q5 | LLM mana yang akan digunakan untuk agentic adapter build? Self-hosted (Ollama + Qwen/CodeLlama) vs API komersial (Claude/GPT-4o)? Mempengaruhi biaya, latency, dan keamanan karena kode supplier dikirim ke LLM. | P2b (BR-P2b-6) | Admin/Bisnis |
+| Q4 | ~~AGENT_MAX_SPEND_PER_REQUEST dan _PER_DAY — berapa angka yang tepat?~~ **RESOLVED**: Menggunakan **Dynamic Guardrail via Hermes Agent** yang tersimpan di DB `AgentOperationalConfig` (default Rp 500rb/req, Rp 5jt/hari). Hermes menganalisis pola saldo/demand & mengirim rekomendasi approval interaktif ke Telegram Admin. Nilai di `env.ts` bertindak sebagai *Absolute Hard Boundary*. | P2a (BR-P2a-3) | Owner bisnis |
+| Q5 | ~~LLM mana yang akan digunakan untuk agentic adapter build?~~ **RESOLVED**: Menggunakan **API Komersial (Claude 3.5 Sonnet / GPT-4o)** via **Hermes Agent Runner di VPS/worker terpisah** (di luar Vercel/Bridge). Biaya sangat rendah (<$5/bln karena frekuensi rendah). Keamanan kredensial dijamin lewat **Data Redaction layer**. Output wajib berupa **GitHub Draft PR + Vitest PASS**, tanpa runtime hot-load. | P2b (BR-P2b-6) | Admin/Bisnis |
 | Q6 | Item 7 (Shopee) dan Item 6 (USDT) — gate legal belum dibuka. Tidak ada effort engineering sebelum gate terbuka. | P3 | Owner bisnis + legal |
 
 ---

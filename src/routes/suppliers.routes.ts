@@ -35,8 +35,8 @@ const createSupplierSchema = z.object({
   displayName: z.string().min(1, 'displayName is required'),
   baseUrl: z.string().url('baseUrl must be a valid URL'),
   authType: z.enum(['API_KEY', 'BEARER', 'BASIC', 'CUSTOM']).default('API_KEY'),
-  credentials: z.union([z.string(), z.record(z.any())]),
-  descriptor: z.union([z.string(), z.record(z.any())]),
+  credentials: z.union([z.string(), z.record(z.string(), z.any())]),
+  descriptor: z.union([z.string(), z.record(z.string(), z.any())]),
   validateImmediately: z.coerce.boolean().default(true),
 });
 
@@ -44,8 +44,8 @@ const updateSupplierSchema = z.object({
   displayName: z.string().optional(),
   baseUrl: z.string().url().optional(),
   authType: z.enum(['API_KEY', 'BEARER', 'BASIC', 'CUSTOM']).optional(),
-  credentials: z.union([z.string(), z.record(z.any())]).optional(),
-  descriptor: z.union([z.string(), z.record(z.any())]).optional(),
+  credentials: z.union([z.string(), z.record(z.string(), z.any())]).optional(),
+  descriptor: z.union([z.string(), z.record(z.string(), z.any())]).optional(),
   status: z.enum(['PENDING_VALIDATION', 'ACTIVE', 'PAUSED', 'DEPRECATED', 'NEEDS_REVIEW']).optional(),
 });
 
@@ -110,7 +110,7 @@ suppliersRouter.get('/', async (req: Request, res: Response) => {
  * Fetch single supplier detail + real-time balance if active.
  */
 suppliersRouter.get('/:code', async (req: Request, res: Response) => {
-  const code = req.params.code.toUpperCase();
+  const code = String(req.params.code).toUpperCase();
   try {
     const sup = await prisma.supplier.findUnique({
       where: { code },
@@ -208,7 +208,7 @@ suppliersRouter.post('/', async (req: Request, res: Response) => {
  * Update existing supplier details or status.
  */
 suppliersRouter.patch('/:code', async (req: Request, res: Response) => {
-  const code = req.params.code.toUpperCase();
+  const code = String(req.params.code).toUpperCase();
   const parseResult = updateSupplierSchema.safeParse(req.body);
 
   if (!parseResult.success) {
@@ -259,7 +259,7 @@ suppliersRouter.patch('/:code', async (req: Request, res: Response) => {
  * Trigger on-demand dry-run validation for a supplier.
  */
 suppliersRouter.post('/:code/validate', async (req: Request, res: Response) => {
-  const code = req.params.code.toUpperCase();
+  const code = String(req.params.code).toUpperCase();
   try {
     const result = await supplierValidationService.validateSupplier(code);
     const updated = await prisma.supplier.findUnique({ where: { code } });

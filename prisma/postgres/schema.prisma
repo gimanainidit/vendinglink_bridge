@@ -1,0 +1,141 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// We use the gen-schema script to inject the correct datasource (sqlite or postgres)
+
+enum TransactionStatus {
+  PENDING
+  SUPPLIER_OK
+  VENDING_RETRY
+  COMPLETED
+  FAILED
+  NEEDS_REVIEW
+  RECONCILING
+}
+
+enum LogDirection {
+  SUPPLIER_REQ
+  SUPPLIER_RES
+  VENDING_REQ
+  VENDING_RES
+  STATE_CHANGE
+}
+
+model Transaction {
+  id                  String            @id @default(cuid())
+  transactionId       String            @unique
+  supplierCode        String
+  supplierProductId   String
+  vlProductId         String
+  productName         String?
+  qty                 Int
+  unitPrice           Float?
+  totalPrice          Float?
+  status              TransactionStatus @default(PENDING)
+  supplierOrderId     String?
+  deliveredKeysEnc    String?           // AES-GCM encrypted
+  emails              String?           // Comma separated if multiple
+  balanceBefore       Float?
+  balanceAfter        Float?
+  deliveryAttempts    Int               @default(0)
+  lastError           String?
+  confirmToken        String?
+  confirmExpiresAt    DateTime?
+  telegramChatId      String
+  
+  logs                TransactionLog[]
+
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+
+  @@index([status, updatedAt])
+}
+
+model TransactionLog {
+  id            String       @id @default(cuid())
+  transactionId String
+  transaction   Transaction  @relation(fields: [transactionId], references: [id])
+  direction     LogDirection
+  httpStatus    Int?
+  payload       String       // Store as String since SQLite doesn't have native JSON
+  durationMs    Int?
+  
+  createdAt     DateTime     @default(now())
+}
+
+model ProcessedUpdate {
+  updateId      Int      @id
+  createdAt     DateTime @default(now())
+}
+
+model ProductMapping {
+  vlProductId         String
+  supplierCode        String
+  supplierProductId   String
+  displayName         String?
+  enabled             Boolean @default(true)
+
+  @@id([supplierCode, supplierProductId])
+  @@index([vlProductId])
+}
+
+enum ProductRequestStatus {
+  SEARCHING
+  FOUND
+  NOT_FOUND
+  CONFIRMED
+  PURCHASED
+  EXPIRED
+  REJECTED
+}
+
+model ProductRequest {
+  id                String               @id @default(cuid())
+  customerRef       String               // opaque ID storefront, BUKAN PII
+  idempotencyKey    String               @unique
+  query             String
+  categorySlug      String?
+  maxBudget         Float?
+  status            ProductRequestStatus @default(SEARCHING)
+  foundSupplierCode String?
+  foundProductId    String?
+  quotedPrice       Float?
+  notifiedAt        DateTime?
+  confirmedAt       DateTime?
+  transactionId     String?
+  rejectionReason   String?
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+
+  @@index([status, createdAt])
+  @@index([customerRef])
+}
+
+enum SupplierStatus {
+  PENDING_VALIDATION
+  ACTIVE
+  PAUSED
+  DEPRECATED
+  NEEDS_REVIEW
+}
+
+model Supplier {
+  code           String         @id
+  displayName    String
+  baseUrl        String
+  authType       String         // API_KEY | BEARER | BASIC | CUSTOM
+  credentialsEnc String         // AES-256-GCM encrypted (iv:authTag:ciphertext)
+  descriptor     String         // JSON descriptor
+  status         SupplierStatus @default(PENDING_VALIDATION)
+  lastError      String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@index([status])
+}
