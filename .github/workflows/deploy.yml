@@ -1,0 +1,33 @@
+name: Deploy Bridge to VPS
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch: # Memungkinkan tombol "Run workflow" manual di GitHub Actions UI
+
+jobs:
+  deploy:
+    name: Deploy to Production VPS
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Remote Deployment via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_SSH_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_SSH_PORT || 22 }}
+          script_stop: true
+          script: |
+            echo "🚀 Connecting to VPS as $(whoami)..."
+            if [ -f /opt/vendinglink_bridge/scripts/deploy.sh ]; then
+              chmod +x /opt/vendinglink_bridge/scripts/deploy.sh
+              /opt/vendinglink_bridge/scripts/deploy.sh
+            elif [ -f /opt/vendinglink_bridge/deploy.sh ]; then
+              chmod +x /opt/vendinglink_bridge/deploy.sh
+              /opt/vendinglink_bridge/deploy.sh
+            else
+              echo "❌ Error: deploy script not found in /opt/vendinglink_bridge!"
+              exit 1
+            fi
