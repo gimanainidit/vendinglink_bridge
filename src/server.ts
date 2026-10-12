@@ -1,11 +1,13 @@
 import { createApp } from './app';
 import { env } from './config/env';
 import { logger } from './lib/logger';
+import { supplierFactory } from './suppliers/SupplierFactory';
 // import { prisma } from './db';
 // import { queues } from './queues/connection';
 
 const start = async () => {
   try {
+    await supplierFactory.loadFromDatabase();
     const app = createApp();
 
     const server = app.listen(env.PORT, () => {

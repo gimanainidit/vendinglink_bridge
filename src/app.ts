@@ -6,6 +6,7 @@ import { logger } from './lib/logger';
 import { bot } from './telegram/bot';
 import { verifySecretMiddleware } from './telegram/middleware/verifySecret';
 import { requestsRouter } from './routes/requests.routes';
+import { suppliersRouter } from './routes/suppliers.routes';
 
 export const createApp = () => {
   const app = express();
@@ -120,6 +121,8 @@ export const createApp = () => {
 
   // Inbound API routes (P2a Agentic Purchasing)
   app.use('/api/v1/requests', requestsRouter);
+  // Dynamic Supplier Ingress API (P2b)
+  app.use('/api/v1/suppliers', suppliersRouter);
 
   // Telegram webhook will be mounted here
   app.post('/webhook/telegram', verifySecretMiddleware, bot.webhookCallback('/webhook/telegram'));

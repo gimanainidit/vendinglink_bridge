@@ -229,6 +229,43 @@ export const handleTextMessage = async (ctx: MyContext) => {
         await ctx.reply(`💰 *${adapter.displayName} Balance:*\n${formatted}`, { parse_mode: 'Markdown' });
         break;
       }
+      case 'suppliers': {
+        const dbSuppliers = await prisma.supplier.findMany({
+          orderBy: { createdAt: 'asc' },
+        });
+        let msg = `🏭 <b>Registered Dynamic & Built-In Suppliers:</b>\n\n`;
+        msg += `<b>Built-In Adapters:</b>\n`;
+        msg += `• <b>Rezeki Shop</b> (<code>RZK</code>): ✅ BUILT-IN\n`;
+        msg += `• <b>Prime Digital</b> (<code>PDA</code>): ✅ BUILT-IN\n`;
+        msg += `• <b>Digital AI Store</b> (<code>DAI</code>): ✅ BUILT-IN\n\n`;
+
+        if (dbSuppliers.length === 0) {
+          msg += `<i>Belum ada supplier dinamis terdaftar di database.</i>\n`;
+        } else {
+          msg += `<b>Dynamic Suppliers:</b>\n`;
+          for (const s of dbSuppliers) {
+            let statusBadge = '⏳ PENDING';
+            if (s.status === 'ACTIVE') statusBadge = '✅ ACTIVE';
+            else if (s.status === 'NEEDS_REVIEW') statusBadge = '⚠️ NEEDS_REVIEW';
+            else if (s.status === 'PAUSED') statusBadge = '⏸️ PAUSED';
+            else if (s.status === 'DEPRECATED') statusBadge = '❌ DEPRECATED';
+
+            let balanceStr = '';
+            if (s.status === 'ACTIVE' && supplierFactory.hasAdapter(s.code)) {
+              try {
+                const b = await supplierFactory.getAdapter(s.code).getBalance();
+                balanceStr = ` | Saldo: Rp${b.toLocaleString('id-ID')}`;
+              } catch {}
+            }
+
+            const errStr = s.lastError ? `\n   <i>Error: ${s.lastError.slice(0, 80)}...</i>` : '';
+            msg += `• <b>${s.displayName}</b> (<code>${s.code}</code>): ${statusBadge}${balanceStr}${errStr}\n`;
+          }
+        }
+        msg += `\n<i>Kelola supplier via Storefront Admin di /admin/suppliers</i>`;
+        await ctx.reply(msg, { parse_mode: 'HTML' });
+        break;
+      }
       case 'agent': {
         const action = command.search || 'status';
         if (action === 'pause') {
@@ -316,6 +353,7 @@ export const handleTextMessage = async (ctx: MyContext) => {
           '• `/list <SUPPLIER> [search]` - List products\n' +
           '• `/buy <SUPPLIER> <PRODUCT_ID> <QTY> [emails]` - Buy products\n' +
           '• `/balance [SUPPLIER|ALL]` - Check balances across suppliers\n' +
+          '• `/suppliers` - List dynamic and built-in suppliers\n' +
           '• `/agent [pause|resume|status]` - Control autonomous procurement kill switch\n' +
           '• `/status <TX_ID>` - Check tx status\n' +
           '• `/pending` - List pending tx\n' +

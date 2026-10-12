@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { env } from '../../config/env';
 
-export type CommandType = 'list' | 'buy' | 'status' | 'pending' | 'balance' | 'retry' | 'map' | 'agent' | 'help';
+export type CommandType = 'list' | 'buy' | 'status' | 'pending' | 'balance' | 'retry' | 'map' | 'agent' | 'suppliers' | 'help';
 
 export interface ParsedCommand {
   type: CommandType;
@@ -91,6 +91,11 @@ export const parseCommand = (text: string): { command?: ParsedCommand; error?: s
       const productId = parts[2];   // supplier-side product ID
       const vlProductId = parts[3]; // VendingLink-side product ID
       return { command: { type: 'map', supplierCode, productId, vlProductId } };
+    }
+
+    case '/suppliers': {
+      const subAction = parts.length > 1 ? parts[1].toUpperCase() : undefined;
+      return { command: { type: 'suppliers', supplierCode: subAction } };
     }
 
     case '/agent': {
