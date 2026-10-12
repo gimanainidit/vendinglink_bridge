@@ -18,6 +18,7 @@ const envSchema = z.object({
   KEYS_ENCRYPTION_KEY: z.string().min(1),
   MAX_BUY_QTY: z.coerce.number().int().min(1).max(100).default(100),
   // Suppliers
+  // @deprecated Use dynamic DB Supplier entries instead. Retained for backward compatibility fallback.
   SUPPLIER_RZK_BASE_URL: z.string().url().optional(),
   SUPPLIER_RZK_API_KEY: z.string().optional(),
   SUPPLIER_PDA_BASE_URL: z.string().url().default('https://prime-digital-ai.com'),

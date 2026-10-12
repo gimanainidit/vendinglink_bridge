@@ -80,7 +80,7 @@ npm run db:push
 ### 6. Start ngrok & Register Telegram Webhook
 1. Start your tunnel:
    ```bash
-   ngrok http 3000
+   ngrok http 5000
    ```
 2. Copy the HTTPS URL from ngrok (e.g., `https://your-tunnel.ngrok-free.dev`) into `PUBLIC_BASE_URL` in `.env`.
 3. Register the webhook to Telegram:
@@ -107,7 +107,7 @@ Open **two terminal windows**:
   npm run dev:worker
   ```
 
-Visit `http://localhost:3000/health` (should return `{"status":"ok"}`).
+Visit `http://localhost:5000/health` (should return `{"status":"ok"}`).
 
 ---
 

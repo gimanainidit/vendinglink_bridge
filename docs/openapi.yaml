@@ -25,11 +25,11 @@ info:
 servers:
   - url: https://bridge.txsiber.online
     description: VendingLink Bridge (Production)
-  - url: http://localhost:3000
+  - url: http://localhost:5000
     description: VendingLink Bridge (Local Development / Sandbox)
   - url: https://vendinglink.txsiber.online
     description: VendingLink Storefront (Production)
-  - url: http://localhost:3001
+  - url: http://localhost:3000
     description: VendingLink Storefront (Local Development / Sandbox)
 
 tags:
@@ -285,7 +285,7 @@ paths:
                     type: string
                     example: "design-tools"
         '404':
-          description: `vlProductId` tidak ditemukan di katalog storefront.
+          description: "`vlProductId` tidak ditemukan di katalog storefront."
           content:
             application/json:
               schema:

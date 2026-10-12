@@ -112,3 +112,25 @@ model ProductRequest {
   @@index([customerRef])
 }
 
+enum SupplierStatus {
+  PENDING_VALIDATION
+  ACTIVE
+  PAUSED
+  DEPRECATED
+  NEEDS_REVIEW
+}
+
+model Supplier {
+  code           String         @id
+  displayName    String
+  baseUrl        String
+  authType       String         // API_KEY | BEARER | BASIC | CUSTOM
+  credentialsEnc String         // AES-256-GCM encrypted (iv:authTag:ciphertext)
+  descriptor     String         // JSON descriptor
+  status         SupplierStatus @default(PENDING_VALIDATION)
+  lastError      String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@index([status])
+}

@@ -35,3 +35,37 @@ export const decryptKeys = (encryptedText: string): string[] => {
   
   return JSON.parse(decrypted);
 };
+
+export const encryptCredentials = (credentials: Record<string, unknown> | string): string => {
+  const text = typeof credentials === 'string' ? credentials : JSON.stringify(credentials);
+  const iv = crypto.randomBytes(IV_LENGTH);
+  const cipher = crypto.createCipheriv(ALGORITHM, ENCRYPTION_KEY, iv);
+  
+  let encrypted = cipher.update(text, 'utf8', 'hex');
+  encrypted += cipher.final('hex');
+  const authTag = cipher.getAuthTag().toString('hex');
+  
+  // Format: iv:authTag:encrypted
+  return `${iv.toString('hex')}:${authTag}:${encrypted}`;
+};
+
+export const decryptCredentials = <T = Record<string, unknown>>(encryptedText: string): T => {
+  const parts = encryptedText.split(':');
+  if (parts.length !== 3) throw new Error('Invalid encrypted credentials format');
+  
+  const iv = Buffer.from(parts[0], 'hex');
+  const authTag = Buffer.from(parts[1], 'hex');
+  const encrypted = parts[2];
+  
+  const decipher = crypto.createDecipheriv(ALGORITHM, ENCRYPTION_KEY, iv);
+  decipher.setAuthTag(authTag);
+  
+  let decrypted = decipher.update(encrypted, 'hex', 'utf8');
+  decrypted += decipher.final('utf8');
+  
+  try {
+    return JSON.parse(decrypted) as T;
+  } catch {
+    return decrypted as unknown as T;
+  }
+};
