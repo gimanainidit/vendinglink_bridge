@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { env } from '../config/env';
 import { appendLog } from '../services/transactionService';
+import { logger } from '../lib/logger';
 
 export class VendingLinkDeliveryError extends Error {
   constructor(message: string, public isRetryable: boolean) {
@@ -88,27 +89,65 @@ export interface VendingLinkProduct {
   supplierProductId?: string | null;
 }
 
+export interface FetchProductsResult {
+  success: boolean;
+  products: VendingLinkProduct[];
+  url: string;
+  statusCode?: number;
+  error?: string;
+}
+
 export const fetchVendingLinkProducts = async (
   search?: string,
   limit: number = 30
-): Promise<VendingLinkProduct[]> => {
-  try {
-    const { data } = await axios.get(
-      `${env.VENDINGLINK_URL}/api/bridge/products`,
-      {
+): Promise<FetchProductsResult> => {
+  const primaryUrl = `${env.VENDINGLINK_URL}/api/bridge/products`;
+  const fallbackUrl = 'https://toko.txsiber.online/api/bridge/products';
+
+  const urlsToTry = [primaryUrl];
+  if (primaryUrl !== fallbackUrl) {
+    urlsToTry.push(fallbackUrl);
+  }
+
+  let lastResult: FetchProductsResult = {
+    success: false,
+    products: [],
+    url: primaryUrl,
+  };
+
+  for (const targetUrl of urlsToTry) {
+    try {
+      const { data, status } = await axios.get(targetUrl, {
         params: { search, limit },
         headers: {
           Authorization: `Bearer ${env.BRIDGE_SECRET_KEY}`,
         },
         timeout: 8000,
+      });
+
+      if (data && Array.isArray(data.products)) {
+        return {
+          success: true,
+          products: data.products,
+          url: targetUrl,
+          statusCode: status,
+        };
       }
-    );
-    if (data && Array.isArray(data.products)) {
-      return data.products;
+    } catch (err: any) {
+      lastResult = {
+        success: false,
+        products: [],
+        url: targetUrl,
+        statusCode: err?.response?.status,
+        error: err?.response?.data?.error || err?.message || 'Network connection failed',
+      };
+      logger.warn(
+        { url: targetUrl, err: err?.message, status: err?.response?.status },
+        'Failed to fetch products from VendingLink URL, trying next if available'
+      );
     }
-    return [];
-  } catch {
-    return [];
   }
+
+  return lastResult;
 };
 

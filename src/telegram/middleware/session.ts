@@ -10,8 +10,8 @@ export interface SessionData {
     emails?: string[];
   };
   pendingMap?: {
-    supplierCode: string;
-    supplierProductId: string;
+    supplierCode?: string;
+    supplierProductId?: string;
     supplierProductName?: string;
     options: Array<{
       vlProductId: string;

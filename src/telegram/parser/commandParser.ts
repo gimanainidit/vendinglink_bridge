@@ -102,8 +102,13 @@ export const parseCommand = (text: string): { command?: ParsedCommand; error?: s
       return { command: { type: 'help' } };
 
     case '/map': {
-      // 1. /map or /map help
-      if (parts.length === 1 || parts[1].toLowerCase() === 'help') {
+      // 1. /map -> open interactive menu catalog
+      if (parts.length === 1) {
+        return { command: { type: 'map', search: 'catalog' } };
+      }
+
+      // 1b. /map help
+      if (parts[1].toLowerCase() === 'help') {
         return { command: { type: 'map', search: 'help' } };
       }
 

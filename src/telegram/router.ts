@@ -124,69 +124,188 @@ const buyPreCheck = async (ctx: MyContext, supplierCode: string, productId: stri
   }
 };
 
-const mapController = async (ctx: MyContext, command: ParsedCommand) => {
-  const subAction = command.search; // 'help' | 'list' | 'interactive' | 'direct'
+export const getProductEmoji = (name: string): string => {
+  const lower = name.toLowerCase();
+  if (lower.includes('google') || lower.includes('gemini')) return '🤖';
+  if (lower.includes('claude') || lower.includes('anthropic')) return '✴️';
+  if (lower.includes('chatgpt') || lower.includes('openai') || lower.includes('gpt')) return '🟢';
+  if (lower.includes('canva')) return '🎨';
+  if (lower.includes('antivirus') || lower.includes('bitdefender') || lower.includes('mcafee')) return '🛡️';
+  if (lower.includes('duolingo')) return '🦉';
+  if (lower.includes('spotify')) return '🎵';
+  if (lower.includes('youtube')) return '▶️';
+  if (lower.includes('netflix') || lower.includes('hbo')) return '📺';
+  if (lower.includes('apple')) return '🍎';
+  if (lower.includes('adobe') || lower.includes('figma')) return '🎨';
+  if (lower.includes('capcut')) return '✂️';
+  if (lower.includes('mail') || lower.includes('gmail')) return '✉️';
+  if (lower.includes('notion')) return '📓';
+  if (lower.includes('prime')) return '📦';
+  if (lower.includes('telegram')) return '✈️';
+  return '📦';
+};
 
-  // 1. HELP
+export const formatPriceShort = (price: number): string => {
+  if (price >= 1000000) {
+    const jt = price / 1000000;
+    return `Rp${jt % 1 === 0 ? jt : jt.toFixed(1)}jt`;
+  }
+  if (price >= 1000) {
+    const rb = price / 1000;
+    return `Rp${rb % 1 === 0 ? rb : rb.toFixed(1)}k`;
+  }
+  return `Rp${price}`;
+};
+
+export const formatButtonLabel = (name: string, price: number): string => {
+  const emoji = getProductEmoji(name);
+  const priceStr = formatPriceShort(price);
+
+  let cleanName = name
+    .replace(/PROMO|HANYA HARI INI|PREMIUM|FULL AKSES|Lisensi|Subscription/gi, '')
+    .replace(/[-–]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (cleanName.length > 13) {
+    cleanName = cleanName.slice(0, 12).trim() + '…';
+  }
+
+  return `${emoji} ${cleanName.toUpperCase()} ${priceStr}`;
+};
+
+export const buildProductGridKeyboard = (
+  products: Array<{ id: string; name: string; price: number }>,
+  actionPrefix: string,
+  extraButtons: Array<Array<{ text: string; callback_data: string }>> = []
+) => {
+  const keyboard: Array<Array<{ text: string; callback_data: string }>> = [];
+
+  for (let i = 0; i < products.length; i += 2) {
+    const row: Array<{ text: string; callback_data: string }> = [];
+    const p1 = products[i];
+    row.push({
+      text: formatButtonLabel(p1.name, p1.price),
+      callback_data: `${actionPrefix}_${i}`,
+    });
+
+    if (i + 1 < products.length) {
+      const p2 = products[i + 1];
+      row.push({
+        text: formatButtonLabel(p2.name, p2.price),
+        callback_data: `${actionPrefix}_${i + 1}`,
+      });
+    }
+    keyboard.push(row);
+  }
+
+  for (const extraRow of extraButtons) {
+    keyboard.push(extraRow);
+  }
+
+  return keyboard;
+};
+
+export const mapController = async (ctx: MyContext, command: ParsedCommand) => {
+  const subAction = command.search; // 'catalog' | 'help' | 'list' | 'interactive' | 'direct'
+
+  // 1. HELP GUIDE
   if (subAction === 'help') {
     await ctx.reply(
       '🗺️ <b>Panduan Pemetaan Produk (/map)</b>\n\n' +
       'Perintah ini menghubungkan produk di supplier dengan produk di katalog VendingLink:\n\n' +
-      '1️⃣ <b>Lihat Produk VendingLink:</b>\n' +
+      '1️⃣ <b>Katalog Menu Interaktif (Seperti Gambar):</b>\n' +
+      '<code>/map</code>\n' +
+      '👉 Langsung membuka menu tombol katalog 2-kolom seluruh produk aktif VendingLink!\n\n' +
+      '2️⃣ <b>Cari Produk Tertentu:</b>\n' +
       '<code>/map list [kata kunci]</code>\n' +
-      '<i>Contoh: <code>/map list gemini</code> atau <code>/map list</code></i>\n\n' +
-      '2️⃣ <b>Pilih Interaktif dengan Tombol (Rekomendasi):</b>\n' +
+      '<i>Contoh: <code>/map list gemini</code> atau <code>/map list claude</code></i>\n\n' +
+      '3️⃣ <b>Pilih Interaktif untuk Supplier (Rekomendasi):</b>\n' +
       '<code>/map &lt;SUPPLIER&gt; &lt;PRODUCT_ID&gt;</code>\n' +
       '<i>Contoh: <code>/map RZK 6a31035939dc014325da2c66</code></i>\n' +
-      '👉 Bot akan mencari produk VendingLink yang cocok dan menampilkan tombol pilihan!\n\n' +
-      '3️⃣ <b>Map Langsung dengan Nama atau ID:</b>\n' +
-      '<code>/map &lt;SUPPLIER&gt; &lt;PRODUCT_ID&gt; &lt;Nama Produk atau ID&gt;</code>\n' +
-      '<i>Contoh: <code>/map RZK 6a31035939dc014325da2c66 Gemini Pro</code></i>',
+      '👉 Bot otomatis mencarikan produk yang cocok dan menampilkan menu tombol pilihan!\n\n' +
+      '4️⃣ <b>Map Langsung dengan Nama atau ID:</b>\n' +
+      '<code>/map &lt;SUPPLIER&gt; &lt;PRODUCT_ID&gt; &lt;Nama atau ID&gt;</code>\n' +
+      '<i>Contoh: <code>/map RZK 6a31035939dc014325da2c66 Gemini</code></i>',
       { parse_mode: 'HTML' }
     );
     return;
   }
 
-  // 2. LIST
-  if (subAction === 'list') {
+  // 2. CATALOG MENU (User runs /map) OR LIST (User runs /map list [keyword])
+  if (subAction === 'catalog' || subAction === 'list') {
     const keyword = command.vlProductId;
-    await ctx.reply(`⏳ Mengambil daftar produk dari VendingLink${keyword ? ' untuk "' + escapeHtml(keyword) + '"' : ''}...`);
-    const vlProducts = await fetchVendingLinkProducts(keyword, 20);
+    const res = await fetchVendingLinkProducts(keyword, 10);
 
-    if (vlProducts.length === 0) {
+    if (!res.success) {
       await ctx.reply(
-        `ℹ️ Tidak ada produk aktif ditemukan di VendingLink${keyword ? ' dengan kata kunci "' + escapeHtml(keyword) + '"' : ''}.\n` +
-        `<i>Pastikan produk sudah ditambahkan dan aktif di Storefront Admin.</i>`,
+        `⚠️ <b>Koneksi ke VendingLink Mengalami Kendala</b>\n\n` +
+        `• <b>URL:</b> <code>${escapeHtml(res.url)}</code>\n` +
+        `• <b>Status:</b> <code>${res.statusCode || 'Offline / Timeout'}</code>\n` +
+        `• <b>Keterangan:</b> <code>${escapeHtml(res.error || 'Network connection failed')}</code>\n\n` +
+        `💡 <i>Pastikan VENDINGLINK_URL diatur ke https://toko.txsiber.online dan Storefront telah selesai deploy di Vercel.</i>\n\n` +
+        `Anda tetap dapat memetakan langsung secara manual:\n` +
+        `<code>/map &lt;SUPPLIER&gt; &lt;PRODUCT_ID&gt; &lt;VL_PRODUCT_ID&gt;</code>`,
         { parse_mode: 'HTML' }
       );
       return;
     }
 
-    let msg = `📋 <b>Daftar Produk VendingLink:</b> (ditemukan ${vlProducts.length} produk)\n\n`;
-    for (let i = 0; i < vlProducts.length; i++) {
-      const p = vlProducts[i];
-      const priceFormatted = `Rp${p.price.toLocaleString('id-ID')}`;
-      msg += `<b>${i + 1}. ${escapeHtml(p.name)}</b>\n`;
-      msg += `   • ID: <code>${escapeHtml(p.id)}</code>\n`;
-      msg += `   • Harga: ${priceFormatted} | Tipe: ${escapeHtml(p.type)}\n\n`;
+    if (res.products.length === 0) {
+      await ctx.reply(
+        `ℹ️ Tidak ada produk aktif ditemukan di VendingLink${keyword ? ' dengan kata kunci "' + escapeHtml(keyword) + '"' : ''}.\n` +
+        `<i>Pastikan produk sudah ditambahkan dan bertatus aktif di Storefront Admin.</i>`,
+        { parse_mode: 'HTML' }
+      );
+      return;
     }
 
-    msg += `💡 <b>Cara Mapping Cepat:</b>\n`;
-    msg += `Ketik: <code>/map &lt;SUPPLIER&gt; &lt;PRODUCT_ID&gt;</code> untuk memilih dengan tombol interaktif!`;
-    await ctx.reply(msg, { parse_mode: 'HTML' });
+    ctx.session.pendingMap = {
+      options: res.products.map(p => ({
+        vlProductId: p.id,
+        name: p.name,
+        price: p.price,
+      })),
+    };
+
+    const keyboard = buildProductGridKeyboard(
+      res.products,
+      'map_pick',
+      [
+        [
+          { text: '🔄 Segarkan', callback_data: 'map_refresh' },
+          { text: 'ℹ️ Panduan', callback_data: 'map_help' },
+        ],
+        [{ text: '❌ Tutup', callback_data: 'map_cancel' }],
+      ]
+    );
+
+    let msg = `🛍️ <b>Katalog Produk VendingLink</b>\n`;
+    if (keyword) {
+      msg += `<i>Hasil pencarian untuk "${escapeHtml(keyword)}":</i>\n\n`;
+    } else {
+      msg += `<i>Pilih salah satu produk di bawah untuk detail & status pemetaan:</i>\n\n`;
+    }
+
+    await ctx.reply(msg, {
+      parse_mode: 'HTML',
+      reply_markup: {
+        inline_keyboard: keyboard,
+      },
+    });
     return;
   }
 
-  // 3. INTERACTIVE (User only provided supplier and supplier product ID)
+  // 3. INTERACTIVE MAPPING (User provides supplier and product ID: /map <SUPPLIER> <PRODUCT_ID>)
   if (subAction === 'interactive') {
     const supplierCode = command.supplierCode!;
     const productId = command.productId!;
 
-    await ctx.reply('⏳ Menyiapkan data produk...');
-
     let supplierProductName = '';
+    let supplierDisplayName = supplierCode;
     try {
       const adapter = supplierFactory.getAdapter(supplierCode);
+      supplierDisplayName = adapter.displayName;
       const supplierProduct = await adapter.getProduct(productId);
       if (supplierProduct) {
         supplierProductName = supplierProduct.name;
@@ -194,13 +313,27 @@ const mapController = async (ctx: MyContext, command: ParsedCommand) => {
     } catch {}
 
     // Search VendingLink for matching products
-    // Try keywords from supplier product name first (e.g. Gemini, Canva, Netflix)
     let candidates: Array<{ id: string; name: string; price: number }> = [];
+
     if (supplierProductName) {
       const words = supplierProductName.replace(/[^a-zA-Z0-9 ]/g, ' ').split(/\s+/).filter(w => w.length >= 3);
       for (const w of words.slice(0, 2)) {
-        const matches = await fetchVendingLinkProducts(w, 8);
-        for (const m of matches) {
+        const fetchRes = await fetchVendingLinkProducts(w, 8);
+        if (fetchRes.success) {
+          for (const m of fetchRes.products) {
+            if (!candidates.some(c => c.id === m.id)) {
+              candidates.push(m);
+            }
+          }
+        }
+      }
+    }
+
+    // Append general active products up to 8
+    if (candidates.length < 8) {
+      const allRes = await fetchVendingLinkProducts(undefined, 10);
+      if (allRes.success) {
+        for (const m of allRes.products) {
           if (!candidates.some(c => c.id === m.id)) {
             candidates.push(m);
           }
@@ -208,27 +341,18 @@ const mapController = async (ctx: MyContext, command: ParsedCommand) => {
       }
     }
 
-    // If still less than 5, fill with general active products
-    if (candidates.length < 5) {
-      const allVl = await fetchVendingLinkProducts(undefined, 10);
-      for (const m of allVl) {
-        if (!candidates.some(c => c.id === m.id)) {
-          candidates.push(m);
-        }
-      }
-    }
-
     if (candidates.length === 0) {
       await ctx.reply(
-        `⚠️ Tidak dapat menemukan produk di katalog VendingLink (koneksi Storefront offline atau katalog kosong).\n\n` +
-        `Anda tetap dapat memetakan langsung secara manual menggunakan ID:\n` +
+        `⚠️ <b>Tidak dapat mengambil produk dari VendingLink</b>\n\n` +
+        `Koneksi ke Storefront mengalami kendala atau katalog produk masih kosong.\n\n` +
+        `Anda tetap dapat memetakan langsung secara manual menggunakan ID produk:\n` +
         `<code>/map ${escapeHtml(supplierCode)} ${escapeHtml(productId)} &lt;VL_PRODUCT_ID&gt;</code>`,
         { parse_mode: 'HTML' }
       );
       return;
     }
 
-    const topOptions = candidates.slice(0, 6);
+    const topOptions = candidates.slice(0, 8);
     ctx.session.pendingMap = {
       supplierCode,
       supplierProductId: productId,
@@ -240,18 +364,16 @@ const mapController = async (ctx: MyContext, command: ParsedCommand) => {
       })),
     };
 
-    const keyboard = topOptions.map((opt, i) => [
-      {
-        text: `${i + 1}. ${opt.name.length > 32 ? opt.name.slice(0, 30) + '..' : opt.name} (Rp${opt.price.toLocaleString('id-ID')})`,
-        callback_data: `map_pick_${i}`,
-      },
-    ]);
-    keyboard.push([{ text: '❌ Batal', callback_data: 'map_cancel' }]);
+    const keyboard = buildProductGridKeyboard(
+      topOptions,
+      'map_pick',
+      [[{ text: '❌ Batal', callback_data: 'map_cancel' }]]
+    );
 
     let msg = `🗺️ <b>Pilih Produk VendingLink untuk Dimapping:</b>\n\n`;
-    msg += `📦 <b>Supplier:</b> <code>${escapeHtml(supplierCode)}</code>\n`;
-    msg += `🏷️ <b>Produk Supplier:</b> ${escapeHtml(supplierProductName || productId)} (<code>${escapeHtml(productId)}</code>)\n\n`;
-    msg += `Silakan pilih produk VendingLink yang sesuai di bawah ini:`;
+    msg += `📦 <b>Supplier:</b> <code>${escapeHtml(supplierCode)}</code> (${escapeHtml(supplierDisplayName)})\n`;
+    msg += `🏷️ <b>Produk Supplier:</b> <b>${escapeHtml(supplierProductName || productId)}</b> (<code>${escapeHtml(productId)}</code>)\n\n`;
+    msg += `Silakan pilih produk VendingLink yang cocok dari menu tombol di bawah:`;
 
     await ctx.reply(msg, {
       parse_mode: 'HTML',
@@ -262,14 +384,15 @@ const mapController = async (ctx: MyContext, command: ParsedCommand) => {
     return;
   }
 
-  // 4. DIRECT (User provided target name or ID)
+  // 4. DIRECT (User provided target name or ID: /map <SUPPLIER> <PRODUCT_ID> <TARGET>)
   if (subAction === 'direct') {
     const supplierCode = command.supplierCode!;
     const supplierProductId = command.productId!;
     const target = command.vlProductId!;
 
     // Check if target matches product name in VendingLink
-    const searchMatches = await fetchVendingLinkProducts(target, 5);
+    const searchRes = await fetchVendingLinkProducts(target, 6);
+    const searchMatches = searchRes.products;
 
     // If exactly 1 match by name
     if (searchMatches.length === 1) {
@@ -293,13 +416,14 @@ const mapController = async (ctx: MyContext, command: ParsedCommand) => {
         `✅ <b>Mapping ${action} (berdasarkan nama)!</b>\n\n` +
         `• <b>Supplier:</b> <code>${escapeHtml(supplierCode)}</code>\n` +
         `• <b>Produk Supplier:</b> <code>${escapeHtml(supplierProductId)}</code>\n` +
-        `• <b>Produk VendingLink:</b> <b>${escapeHtml(match.name)}</b> (<code>${escapeHtml(match.id)}</code>)`,
+        `• <b>Produk VendingLink:</b> <b>${escapeHtml(match.name)}</b> (<code>${escapeHtml(match.id)}</code>)\n\n` +
+        `🚀 Beli sekarang:\n<code>/buy ${escapeHtml(supplierCode)} ${escapeHtml(supplierProductId)}</code>`,
         { parse_mode: 'HTML' }
       );
       return;
     }
 
-    // If multiple matches by name, present interactive buttons
+    // If multiple matches by name, present interactive buttons grid
     if (searchMatches.length > 1) {
       ctx.session.pendingMap = {
         supplierCode,
@@ -311,16 +435,14 @@ const mapController = async (ctx: MyContext, command: ParsedCommand) => {
         })),
       };
 
-      const keyboard = searchMatches.map((opt, i) => [
-        {
-          text: `${i + 1}. ${opt.name.length > 32 ? opt.name.slice(0, 30) + '..' : opt.name} (Rp${opt.price.toLocaleString('id-ID')})`,
-          callback_data: `map_pick_${i}`,
-        },
-      ]);
-      keyboard.push([{ text: '❌ Batal', callback_data: 'map_cancel' }]);
+      const keyboard = buildProductGridKeyboard(
+        searchMatches,
+        'map_pick',
+        [[{ text: '❌ Batal', callback_data: 'map_cancel' }]]
+      );
 
       await ctx.reply(
-        `🔍 Ditemukan ${searchMatches.length} produk VendingLink yang cocok dengan "<i>${escapeHtml(target)}</i>".\nSilakan pilih salah satu:`,
+        `🔍 Ditemukan ${searchMatches.length} produk VendingLink yang cocok dengan "<i>${escapeHtml(target)}</i>".\nSilakan pilih salah satu di bawah:`,
         {
           parse_mode: 'HTML',
           reply_markup: {
@@ -351,7 +473,8 @@ const mapController = async (ctx: MyContext, command: ParsedCommand) => {
       `✅ <b>Mapping ${action}!</b>\n\n` +
       `• <b>Supplier:</b> <code>${escapeHtml(supplierCode)}</code>\n` +
       `• <b>Produk Supplier:</b> <code>${escapeHtml(supplierProductId)}</code>\n` +
-      `• <b>VendingLink Product ID:</b> <code>${escapeHtml(target)}</code>`,
+      `• <b>VendingLink Product ID:</b> <code>${escapeHtml(target)}</code>\n\n` +
+      `🚀 Beli sekarang:\n<code>/buy ${escapeHtml(supplierCode)} ${escapeHtml(supplierProductId)}</code>`,
       { parse_mode: 'HTML' }
     );
     return;

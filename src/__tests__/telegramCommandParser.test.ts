@@ -99,9 +99,9 @@ describe('Telegram Command Parser & Formatting', () => {
   });
 
   describe('/map command parsing', () => {
-    it('parses /map or /map help to help action', () => {
+    it('parses /map to catalog action, and /map help to help action', () => {
       const res1 = parseCommand('/map');
-      expect(res1.command).toEqual({ type: 'map', search: 'help' });
+      expect(res1.command).toEqual({ type: 'map', search: 'catalog' });
 
       const res2 = parseCommand('/map help');
       expect(res2.command).toEqual({ type: 'map', search: 'help' });
@@ -140,6 +140,35 @@ describe('Telegram Command Parser & Formatting', () => {
       const res = parseCommand('/map rzk');
       expect(res.command).toBeUndefined();
       expect(res.error).toContain('Penggunaan /map:');
+    });
+  });
+
+  describe('Product Menu Grid Layout (2-Column Buttons)', () => {
+    it('formats 2-column inline keyboard buttons with emojis and prices', async () => {
+      const { buildProductGridKeyboard, formatButtonLabel } = await import('../telegram/router');
+
+      const label1 = formatButtonLabel('Google AI Pro Plan - 18 bln PROMO', 350000);
+      expect(label1).toContain('🤖');
+      expect(label1).toContain('Rp350k');
+
+      const label2 = formatButtonLabel('CANVA EDUCATION - PREMIUM TEACHER', 18900);
+      expect(label2).toContain('🎨');
+      expect(label2).toContain('Rp18.9k');
+
+      const products = [
+        { id: '1', name: 'Google AI Pro', price: 350000 },
+        { id: '2', name: 'Canva Education', price: 18900 },
+        { id: '3', name: 'Claude API $500', price: 500000 },
+      ];
+
+      const keyboard = buildProductGridKeyboard(products, 'map_pick');
+      // 3 items -> row 0 has 2 items, row 1 has 1 item
+      expect(keyboard.length).toBe(2);
+      expect(keyboard[0].length).toBe(2);
+      expect(keyboard[1].length).toBe(1);
+      expect(keyboard[0][0].callback_data).toBe('map_pick_0');
+      expect(keyboard[0][1].callback_data).toBe('map_pick_1');
+      expect(keyboard[1][0].callback_data).toBe('map_pick_2');
     });
   });
 });
