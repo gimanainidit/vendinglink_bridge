@@ -102,14 +102,40 @@ export const parseCommand = (text: string): { command?: ParsedCommand; error?: s
       return { command: { type: 'help' } };
 
     case '/map': {
-      // /map <SUPPLIER_CODE> <SUPPLIER_PRODUCT_ID> <VL_PRODUCT_ID>
-      if (parts.length < 4) {
-        return { error: 'Usage: /map <SUPPLIER_CODE> <SUPPLIER_PRODUCT_ID> <VL_PRODUCT_ID>' };
+      // 1. /map or /map help
+      if (parts.length === 1 || parts[1].toLowerCase() === 'help') {
+        return { command: { type: 'map', search: 'help' } };
       }
+
+      // 2. /map list [searchKeyword]
+      if (parts[1].toLowerCase() === 'list') {
+        const keyword = parts.slice(2).join(' ').trim();
+        return { command: { type: 'map', search: 'list', vlProductId: keyword || undefined } };
+      }
+
+      // 3. /map <SUPPLIER> without product ID
+      if (parts.length === 2) {
+        return {
+          error:
+            'Penggunaan /map:\n' +
+            '• /map list [kata kunci] — Lihat daftar produk VendingLink\n' +
+            '• /map <SUPPLIER> <PRODUCT_ID> — Pilih produk VendingLink secara interaktif (dengan tombol)\n' +
+            '• /map <SUPPLIER> <PRODUCT_ID> <VL_PRODUCT_ID atau Nama Produk> — Map langsung'
+        };
+      }
+
+      // 4. /map <SUPPLIER> <PRODUCT_ID> (interactive selection)
+      if (parts.length === 3) {
+        const supplierCode = parts[1].toUpperCase();
+        const productId = parts[2];
+        return { command: { type: 'map', search: 'interactive', supplierCode, productId } };
+      }
+
+      // 5. /map <SUPPLIER> <PRODUCT_ID> <VL_PRODUCT_ID or NAME...>
       const supplierCode = parts[1].toUpperCase();
-      const productId = parts[2];   // supplier-side product ID
-      const vlProductId = parts[3]; // VendingLink-side product ID
-      return { command: { type: 'map', supplierCode, productId, vlProductId } };
+      const productId = parts[2];
+      const target = parts.slice(3).join(' ').trim();
+      return { command: { type: 'map', search: 'direct', supplierCode, productId, vlProductId: target } };
     }
 
     case '/suppliers': {

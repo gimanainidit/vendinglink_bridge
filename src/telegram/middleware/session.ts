@@ -9,6 +9,16 @@ export interface SessionData {
     qty: number;
     emails?: string[];
   };
+  pendingMap?: {
+    supplierCode: string;
+    supplierProductId: string;
+    supplierProductName?: string;
+    options: Array<{
+      vlProductId: string;
+      name: string;
+      price: number;
+    }>;
+  };
 }
 
 export interface MyContext extends Context {

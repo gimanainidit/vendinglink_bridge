@@ -1,4 +1,4 @@
-import { parseCommand } from './parser/commandParser';
+import { parseCommand, ParsedCommand } from './parser/commandParser';
 import { MyContext } from './middleware/session';
 import { z } from 'zod';
 import { logger } from '../lib/logger';
@@ -6,6 +6,7 @@ import { supplierFactory } from '../suppliers/SupplierFactory';
 import { env } from '../config/env';
 import { prisma } from '../db';
 import { agentGuardrailService } from '../services/agentGuardrailService';
+import { fetchVendingLinkProducts } from '../vendinglink/vendingLinkClient';
 
 export const escapeHtml = (str: string): string =>
   str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -85,7 +86,7 @@ const buyPreCheck = async (ctx: MyContext, supplierCode: string, productId: stri
 
     const mappingWarning = mapping
       ? ''
-      : `\n⚠️ <b>Produk belum dimapping!</b> Jalankan dulu:\n<code>/map ${safeSupplierCode} ${safeProductId} &lt;VL_PRODUCT_ID&gt;</code>\nJika dilanjutkan, transaksi akan parkir di <code>NEEDS_REVIEW</code> sampai dimapping &amp; di-retry.\n`;
+      : `\n⚠️ <b>Produk belum dimapping!</b> Jalankan:\n<code>/map ${safeSupplierCode} ${safeProductId}</code>\n<i>(Pilih produk VendingLink yang cocok dari tombol)</i>\n`;
 
     const totalFormatted = adapter.code === 'PDA' ? `$${total.toFixed(2)} USD` : `Rp${total.toLocaleString('id-ID')}`;
     const balanceBeforeFormatted = adapter.code === 'PDA' ? `$${balance.toFixed(2)} USD` : `Rp${balance.toLocaleString('id-ID')}`;
@@ -120,6 +121,240 @@ const buyPreCheck = async (ctx: MyContext, supplierCode: string, productId: stri
     });
   } catch (err: any) {
     await ctx.reply(`❌ ${err.message}`);
+  }
+};
+
+const mapController = async (ctx: MyContext, command: ParsedCommand) => {
+  const subAction = command.search; // 'help' | 'list' | 'interactive' | 'direct'
+
+  // 1. HELP
+  if (subAction === 'help') {
+    await ctx.reply(
+      '🗺️ <b>Panduan Pemetaan Produk (/map)</b>\n\n' +
+      'Perintah ini menghubungkan produk di supplier dengan produk di katalog VendingLink:\n\n' +
+      '1️⃣ <b>Lihat Produk VendingLink:</b>\n' +
+      '<code>/map list [kata kunci]</code>\n' +
+      '<i>Contoh: <code>/map list gemini</code> atau <code>/map list</code></i>\n\n' +
+      '2️⃣ <b>Pilih Interaktif dengan Tombol (Rekomendasi):</b>\n' +
+      '<code>/map &lt;SUPPLIER&gt; &lt;PRODUCT_ID&gt;</code>\n' +
+      '<i>Contoh: <code>/map RZK 6a31035939dc014325da2c66</code></i>\n' +
+      '👉 Bot akan mencari produk VendingLink yang cocok dan menampilkan tombol pilihan!\n\n' +
+      '3️⃣ <b>Map Langsung dengan Nama atau ID:</b>\n' +
+      '<code>/map &lt;SUPPLIER&gt; &lt;PRODUCT_ID&gt; &lt;Nama Produk atau ID&gt;</code>\n' +
+      '<i>Contoh: <code>/map RZK 6a31035939dc014325da2c66 Gemini Pro</code></i>',
+      { parse_mode: 'HTML' }
+    );
+    return;
+  }
+
+  // 2. LIST
+  if (subAction === 'list') {
+    const keyword = command.vlProductId;
+    await ctx.reply(`⏳ Mengambil daftar produk dari VendingLink${keyword ? ' untuk "' + escapeHtml(keyword) + '"' : ''}...`);
+    const vlProducts = await fetchVendingLinkProducts(keyword, 20);
+
+    if (vlProducts.length === 0) {
+      await ctx.reply(
+        `ℹ️ Tidak ada produk aktif ditemukan di VendingLink${keyword ? ' dengan kata kunci "' + escapeHtml(keyword) + '"' : ''}.\n` +
+        `<i>Pastikan produk sudah ditambahkan dan aktif di Storefront Admin.</i>`,
+        { parse_mode: 'HTML' }
+      );
+      return;
+    }
+
+    let msg = `📋 <b>Daftar Produk VendingLink:</b> (ditemukan ${vlProducts.length} produk)\n\n`;
+    for (let i = 0; i < vlProducts.length; i++) {
+      const p = vlProducts[i];
+      const priceFormatted = `Rp${p.price.toLocaleString('id-ID')}`;
+      msg += `<b>${i + 1}. ${escapeHtml(p.name)}</b>\n`;
+      msg += `   • ID: <code>${escapeHtml(p.id)}</code>\n`;
+      msg += `   • Harga: ${priceFormatted} | Tipe: ${escapeHtml(p.type)}\n\n`;
+    }
+
+    msg += `💡 <b>Cara Mapping Cepat:</b>\n`;
+    msg += `Ketik: <code>/map &lt;SUPPLIER&gt; &lt;PRODUCT_ID&gt;</code> untuk memilih dengan tombol interaktif!`;
+    await ctx.reply(msg, { parse_mode: 'HTML' });
+    return;
+  }
+
+  // 3. INTERACTIVE (User only provided supplier and supplier product ID)
+  if (subAction === 'interactive') {
+    const supplierCode = command.supplierCode!;
+    const productId = command.productId!;
+
+    await ctx.reply('⏳ Menyiapkan data produk...');
+
+    let supplierProductName = '';
+    try {
+      const adapter = supplierFactory.getAdapter(supplierCode);
+      const supplierProduct = await adapter.getProduct(productId);
+      if (supplierProduct) {
+        supplierProductName = supplierProduct.name;
+      }
+    } catch {}
+
+    // Search VendingLink for matching products
+    // Try keywords from supplier product name first (e.g. Gemini, Canva, Netflix)
+    let candidates: Array<{ id: string; name: string; price: number }> = [];
+    if (supplierProductName) {
+      const words = supplierProductName.replace(/[^a-zA-Z0-9 ]/g, ' ').split(/\s+/).filter(w => w.length >= 3);
+      for (const w of words.slice(0, 2)) {
+        const matches = await fetchVendingLinkProducts(w, 8);
+        for (const m of matches) {
+          if (!candidates.some(c => c.id === m.id)) {
+            candidates.push(m);
+          }
+        }
+      }
+    }
+
+    // If still less than 5, fill with general active products
+    if (candidates.length < 5) {
+      const allVl = await fetchVendingLinkProducts(undefined, 10);
+      for (const m of allVl) {
+        if (!candidates.some(c => c.id === m.id)) {
+          candidates.push(m);
+        }
+      }
+    }
+
+    if (candidates.length === 0) {
+      await ctx.reply(
+        `⚠️ Tidak dapat menemukan produk di katalog VendingLink (koneksi Storefront offline atau katalog kosong).\n\n` +
+        `Anda tetap dapat memetakan langsung secara manual menggunakan ID:\n` +
+        `<code>/map ${escapeHtml(supplierCode)} ${escapeHtml(productId)} &lt;VL_PRODUCT_ID&gt;</code>`,
+        { parse_mode: 'HTML' }
+      );
+      return;
+    }
+
+    const topOptions = candidates.slice(0, 6);
+    ctx.session.pendingMap = {
+      supplierCode,
+      supplierProductId: productId,
+      supplierProductName: supplierProductName || undefined,
+      options: topOptions.map(c => ({
+        vlProductId: c.id,
+        name: c.name,
+        price: c.price,
+      })),
+    };
+
+    const keyboard = topOptions.map((opt, i) => [
+      {
+        text: `${i + 1}. ${opt.name.length > 32 ? opt.name.slice(0, 30) + '..' : opt.name} (Rp${opt.price.toLocaleString('id-ID')})`,
+        callback_data: `map_pick_${i}`,
+      },
+    ]);
+    keyboard.push([{ text: '❌ Batal', callback_data: 'map_cancel' }]);
+
+    let msg = `🗺️ <b>Pilih Produk VendingLink untuk Dimapping:</b>\n\n`;
+    msg += `📦 <b>Supplier:</b> <code>${escapeHtml(supplierCode)}</code>\n`;
+    msg += `🏷️ <b>Produk Supplier:</b> ${escapeHtml(supplierProductName || productId)} (<code>${escapeHtml(productId)}</code>)\n\n`;
+    msg += `Silakan pilih produk VendingLink yang sesuai di bawah ini:`;
+
+    await ctx.reply(msg, {
+      parse_mode: 'HTML',
+      reply_markup: {
+        inline_keyboard: keyboard,
+      },
+    });
+    return;
+  }
+
+  // 4. DIRECT (User provided target name or ID)
+  if (subAction === 'direct') {
+    const supplierCode = command.supplierCode!;
+    const supplierProductId = command.productId!;
+    const target = command.vlProductId!;
+
+    // Check if target matches product name in VendingLink
+    const searchMatches = await fetchVendingLinkProducts(target, 5);
+
+    // If exactly 1 match by name
+    if (searchMatches.length === 1) {
+      const match = searchMatches[0];
+      const existing = await prisma.productMapping.findUnique({
+        where: {
+          supplierCode_supplierProductId: { supplierCode, supplierProductId },
+        },
+      });
+
+      await prisma.productMapping.upsert({
+        where: {
+          supplierCode_supplierProductId: { supplierCode, supplierProductId },
+        },
+        update: { vlProductId: match.id, displayName: match.name },
+        create: { supplierCode, supplierProductId, vlProductId: match.id, displayName: match.name },
+      });
+
+      const action = existing ? 'diperbarui' : 'dibuat';
+      await ctx.reply(
+        `✅ <b>Mapping ${action} (berdasarkan nama)!</b>\n\n` +
+        `• <b>Supplier:</b> <code>${escapeHtml(supplierCode)}</code>\n` +
+        `• <b>Produk Supplier:</b> <code>${escapeHtml(supplierProductId)}</code>\n` +
+        `• <b>Produk VendingLink:</b> <b>${escapeHtml(match.name)}</b> (<code>${escapeHtml(match.id)}</code>)`,
+        { parse_mode: 'HTML' }
+      );
+      return;
+    }
+
+    // If multiple matches by name, present interactive buttons
+    if (searchMatches.length > 1) {
+      ctx.session.pendingMap = {
+        supplierCode,
+        supplierProductId,
+        options: searchMatches.map(c => ({
+          vlProductId: c.id,
+          name: c.name,
+          price: c.price,
+        })),
+      };
+
+      const keyboard = searchMatches.map((opt, i) => [
+        {
+          text: `${i + 1}. ${opt.name.length > 32 ? opt.name.slice(0, 30) + '..' : opt.name} (Rp${opt.price.toLocaleString('id-ID')})`,
+          callback_data: `map_pick_${i}`,
+        },
+      ]);
+      keyboard.push([{ text: '❌ Batal', callback_data: 'map_cancel' }]);
+
+      await ctx.reply(
+        `🔍 Ditemukan ${searchMatches.length} produk VendingLink yang cocok dengan "<i>${escapeHtml(target)}</i>".\nSilakan pilih salah satu:`,
+        {
+          parse_mode: 'HTML',
+          reply_markup: {
+            inline_keyboard: keyboard,
+          },
+        }
+      );
+      return;
+    }
+
+    // If no match found by name, treat target as raw vlProductId (exact ID)
+    const existing = await prisma.productMapping.findUnique({
+      where: {
+        supplierCode_supplierProductId: { supplierCode, supplierProductId },
+      },
+    });
+
+    await prisma.productMapping.upsert({
+      where: {
+        supplierCode_supplierProductId: { supplierCode, supplierProductId },
+      },
+      update: { vlProductId: target },
+      create: { supplierCode, supplierProductId, vlProductId: target },
+    });
+
+    const action = existing ? 'diperbarui' : 'dibuat';
+    await ctx.reply(
+      `✅ <b>Mapping ${action}!</b>\n\n` +
+      `• <b>Supplier:</b> <code>${escapeHtml(supplierCode)}</code>\n` +
+      `• <b>Produk Supplier:</b> <code>${escapeHtml(supplierProductId)}</code>\n` +
+      `• <b>VendingLink Product ID:</b> <code>${escapeHtml(target)}</code>`,
+      { parse_mode: 'HTML' }
+    );
+    return;
   }
 };
 
@@ -323,38 +558,9 @@ export const handleTextMessage = async (ctx: MyContext) => {
         await ctx.reply(`🔄 Forced retry initiated for TX ${command.txId}. Enqueued for delivery.`);
         break;
       }
-      case 'map': {
-        const supplierCode = command.supplierCode!;
-        const supplierProductId = command.productId!;
-        const vlProductId = command.vlProductId!;
-
-        // Check for an existing mapping so we can report created vs updated.
-        const existing = await prisma.productMapping.findUnique({
-          where: {
-            supplierCode_supplierProductId: { supplierCode, supplierProductId },
-          },
-        });
-
-        await prisma.productMapping.upsert({
-          where: {
-            supplierCode_supplierProductId: { supplierCode, supplierProductId },
-          },
-          update: { vlProductId },
-          create: { supplierCode, supplierProductId, vlProductId },
-        });
-
-        const action = existing
-          ? `diperbarui (sebelumnya <code>${escapeHtml(existing.vlProductId)}</code>)`
-          : 'dibuat';
-        await ctx.reply(
-          `✅ Mapping ${action}\n` +
-          `Supplier: <code>${escapeHtml(supplierCode)}</code>\n` +
-          `Supplier product ID: <code>${escapeHtml(supplierProductId)}</code>\n` +
-          `VendingLink product ID: <code>${escapeHtml(vlProductId)}</code>`,
-          { parse_mode: 'HTML' }
-        );
+      case 'map':
+        await mapController(ctx, command);
         break;
-      }
       case 'help':
         await ctx.reply(
           '🤖 <b>VendingLink Bridge</b>\n\n' +
@@ -367,7 +573,8 @@ export const handleTextMessage = async (ctx: MyContext) => {
           '• <code>/status &lt;TX_ID&gt;</code> - Check tx status\n' +
           '• <code>/pending</code> - List pending tx\n' +
           '• <code>/retry &lt;TX_ID&gt;</code> - Force retry to VendingLink\n' +
-          '• <code>/map &lt;SUPPLIER&gt; &lt;SUPPLIER_PRODUCT_ID&gt; &lt;VL_PRODUCT_ID&gt;</code> - Register product mapping\n' +
+          '• <code>/map &lt;SUPPLIER&gt; &lt;PRODUCT_ID&gt;</code> - Map produk interaktif (pilih dari nama)\n' +
+          '• <code>/map list [search]</code> - Lihat daftar produk VendingLink\n' +
           '• <code>/cancel</code> - Cancel current operation',
           { parse_mode: 'HTML' }
         );
@@ -378,3 +585,4 @@ export const handleTextMessage = async (ctx: MyContext) => {
     await ctx.reply('⚠️ An internal error occurred.');
   }
 };
+

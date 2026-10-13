@@ -91,11 +91,56 @@ describe('Telegram Command Parser & Formatting', () => {
     it('formats unmapped warning safely without entity errors', () => {
       const supplierCode = 'RZK';
       const productId = '6a31035939dc014325da2c66';
-      const warning = `⚠️ <b>Produk belum dimapping!</b> Jalankan dulu:\n<code>/map ${escapeHtml(supplierCode)} ${escapeHtml(productId)} &lt;VL_PRODUCT_ID&gt;</code>\nJika dilanjutkan, transaksi akan parkir di <code>NEEDS_REVIEW</code> sampai dimapping &amp; di-retry.`;
+      const warning = `⚠️ <b>Produk belum dimapping!</b> Jalankan:\n<code>/map ${escapeHtml(supplierCode)} ${escapeHtml(productId)}</code>\n<i>(Pilih produk VendingLink yang cocok dari tombol)</i>\n`;
 
-      expect(warning).toContain('<code>NEEDS_REVIEW</code>');
-      expect(warning).toContain('&lt;VL_PRODUCT_ID&gt;');
-      expect(warning).not.toContain('<VL_PRODUCT_ID>');
+      expect(warning).toContain('<code>/map RZK 6a31035939dc014325da2c66</code>');
+      expect(warning).toContain('<b>Produk belum dimapping!</b>');
+    });
+  });
+
+  describe('/map command parsing', () => {
+    it('parses /map or /map help to help action', () => {
+      const res1 = parseCommand('/map');
+      expect(res1.command).toEqual({ type: 'map', search: 'help' });
+
+      const res2 = parseCommand('/map help');
+      expect(res2.command).toEqual({ type: 'map', search: 'help' });
+    });
+
+    it('parses /map list with and without search keyword', () => {
+      const res1 = parseCommand('/map list');
+      expect(res1.command).toEqual({ type: 'map', search: 'list', vlProductId: undefined });
+
+      const res2 = parseCommand('/map list gemini pro');
+      expect(res2.command).toEqual({ type: 'map', search: 'list', vlProductId: 'gemini pro' });
+    });
+
+    it('parses /map with 2 args as interactive mode', () => {
+      const res = parseCommand('/map rzk 6a31035939dc014325da2c66');
+      expect(res.command).toEqual({
+        type: 'map',
+        search: 'interactive',
+        supplierCode: 'RZK',
+        productId: '6a31035939dc014325da2c66',
+      });
+    });
+
+    it('parses /map with 3+ args as direct mapping with product name or id', () => {
+      const res = parseCommand('/map rzk 6a31035939dc014325da2c66 Gemini Pro 1 Bulan');
+      expect(res.command).toEqual({
+        type: 'map',
+        search: 'direct',
+        supplierCode: 'RZK',
+        productId: '6a31035939dc014325da2c66',
+        vlProductId: 'Gemini Pro 1 Bulan',
+      });
+    });
+
+    it('returns informative guide when only supplier code is provided', () => {
+      const res = parseCommand('/map rzk');
+      expect(res.command).toBeUndefined();
+      expect(res.error).toContain('Penggunaan /map:');
     });
   });
 });
+

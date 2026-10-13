@@ -78,3 +78,37 @@ export const deliverToVendingLink = async (
     throw new VendingLinkDeliveryError(`Non-retryable VendingLink rejection (${status}): ${JSON.stringify(resData)}`, false);
   }
 };
+
+export interface VendingLinkProduct {
+  id: string;
+  name: string;
+  price: number;
+  type: string;
+  supplierMode?: string;
+  supplierProductId?: string | null;
+}
+
+export const fetchVendingLinkProducts = async (
+  search?: string,
+  limit: number = 30
+): Promise<VendingLinkProduct[]> => {
+  try {
+    const { data } = await axios.get(
+      `${env.VENDINGLINK_URL}/api/bridge/products`,
+      {
+        params: { search, limit },
+        headers: {
+          Authorization: `Bearer ${env.BRIDGE_SECRET_KEY}`,
+        },
+        timeout: 8000,
+      }
+    );
+    if (data && Array.isArray(data.products)) {
+      return data.products;
+    }
+    return [];
+  } catch {
+    return [];
+  }
+};
+

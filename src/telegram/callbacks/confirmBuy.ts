@@ -15,6 +15,61 @@ export const handleCallbackQuery = async (ctx: MyContext) => {
       return;
     }
 
+    if (data === 'map_cancel') {
+      ctx.session.pendingMap = undefined;
+      await ctx.editMessageText('❌ Pemetaan produk dibatalkan.');
+      return;
+    }
+
+    if (data.startsWith('map_pick_')) {
+      const index = parseInt(data.replace('map_pick_', ''), 10);
+      const session = ctx.session.pendingMap;
+
+      if (!session || isNaN(index) || !session.options[index]) {
+        await ctx.editMessageText('❌ Sesi pemilihan mapping telah kedaluwarsa. Silakan jalankan perintah /map kembali.');
+        return;
+      }
+
+      const selected = session.options[index];
+      const { supplierCode, supplierProductId, supplierProductName } = session;
+
+      const existing = await prisma.productMapping.findUnique({
+        where: {
+          supplierCode_supplierProductId: { supplierCode, supplierProductId },
+        },
+      });
+
+      await prisma.productMapping.upsert({
+        where: {
+          supplierCode_supplierProductId: { supplierCode, supplierProductId },
+        },
+        update: {
+          vlProductId: selected.vlProductId,
+          displayName: selected.name,
+        },
+        create: {
+          supplierCode,
+          supplierProductId,
+          vlProductId: selected.vlProductId,
+          displayName: selected.name,
+        },
+      });
+
+      ctx.session.pendingMap = undefined;
+
+      const action = existing ? 'diperbarui' : 'dibuat';
+      await ctx.editMessageText(
+        `✅ <b>Mapping Produk Berhasil ${action}!</b>\n\n` +
+        `• <b>Supplier:</b> <code>${escapeHtml(supplierCode)}</code>\n` +
+        `• <b>Produk Supplier:</b> <code>${escapeHtml(supplierProductId)}</code>${supplierProductName ? ` (${escapeHtml(supplierProductName)})` : ''}\n` +
+        `• <b>Produk VendingLink:</b> <b>${escapeHtml(selected.name)}</b> (<code>${escapeHtml(selected.vlProductId)}</code>)\n\n` +
+        `🚀 Sekarang Anda bisa langsung membeli produk ini dengan:\n` +
+        `<code>/buy ${escapeHtml(supplierCode)} ${escapeHtml(supplierProductId)}</code>`,
+        { parse_mode: 'HTML' }
+      );
+      return;
+    }
+
     if (data.startsWith('buy_confirm_')) {
       const parts = data.split('_');
       // buy_confirm_SUPPLIER_PRODUCTID_QTY
