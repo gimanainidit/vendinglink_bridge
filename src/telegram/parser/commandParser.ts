@@ -32,32 +32,51 @@ export const parseCommand = (text: string): { command?: ParsedCommand; error?: s
     }
     
     case '/buy': {
-      // /buy <SUPPLIER> <PRODUCT_ID> <QTY> [email1,email2]
-      if (parts.length < 4) return { error: 'Usage: /buy <SUPPLIER_CODE> <PRODUCT_ID> <QTY> [emails...]' };
+      // /buy <SUPPLIER> <PRODUCT_ID> [QTY] [email1,email2]
+      if (parts.length < 3) return { error: 'Usage: /buy <SUPPLIER_CODE> <PRODUCT_ID> [QTY] [emails...]' };
       
       const supplierCode = parts[1].toUpperCase();
       const productId = parts[2];
-      const qtyRaw = parseInt(parts[3], 10);
-      
-      if (isNaN(qtyRaw) || qtyRaw < 1 || qtyRaw > env.MAX_BUY_QTY) {
-        return { error: `Quantity must be an integer between 1 and ${env.MAX_BUY_QTY}` };
+
+      let qty = 1;
+      let emailIndex = -1;
+
+      if (parts.length >= 4) {
+        const potentialQty = parseInt(parts[3], 10);
+        if (!isNaN(potentialQty)) {
+          if (potentialQty < 1 || potentialQty > env.MAX_BUY_QTY) {
+            return { error: `Quantity must be an integer between 1 and ${env.MAX_BUY_QTY}` };
+          }
+          qty = potentialQty;
+          if (parts.length > 4) {
+            emailIndex = 4;
+          }
+        } else {
+          // If parts[3] is not a number, check if it's email(s) for default qty 1
+          if (parts[3].includes('@')) {
+            qty = 1;
+            emailIndex = 3;
+          } else {
+            return { error: `Quantity must be an integer between 1 and ${env.MAX_BUY_QTY}` };
+          }
+        }
       }
 
       let emails: string[] | undefined;
-      if (parts.length > 4) {
-        const emailStr = parts[4];
+      if (emailIndex !== -1 && parts[emailIndex]) {
+        const emailStr = parts[emailIndex];
         emails = emailStr.split(',').map(e => e.trim());
         for (const e of emails) {
           if (!emailSchema.safeParse(e).success) {
             return { error: `Invalid email format: ${e}` };
           }
         }
-        if (emails.length !== qtyRaw) {
-          return { error: `Provided ${emails.length} emails, but quantity is ${qtyRaw}. They must match.` };
+        if (emails.length !== qty) {
+          return { error: `Provided ${emails.length} emails, but quantity is ${qty}. They must match.` };
         }
       }
 
-      return { command: { type: 'buy', supplierCode, productId, qty: qtyRaw, emails } };
+      return { command: { type: 'buy', supplierCode, productId, qty, emails } };
     }
 
     case '/status': {

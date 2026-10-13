@@ -7,6 +7,9 @@ import { env } from '../config/env';
 import { prisma } from '../db';
 import { agentGuardrailService } from '../services/agentGuardrailService';
 
+export const escapeHtml = (str: string): string =>
+  str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
 // Stubs for controllers (to be implemented in Phase 2)
 const listController = async (ctx: MyContext, supplierCode: string, search?: string) => {
   try {
@@ -19,17 +22,17 @@ const listController = async (ctx: MyContext, supplierCode: string, search?: str
       return;
     }
 
-    let msg = `📦 <b>${adapter.displayName} Products:</b>\n\n`;
+    let msg = `📦 <b>${escapeHtml(adapter.displayName)} Products:</b>\n\n`;
     for (const p of products.slice(0, 15)) {
       const status = p.availability === 'in_stock' ? '✅' : '❌';
       const emailBadge = p.requiresEmail ? ' 📧' : '';
-      const safeName = p.name.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const safeName = escapeHtml(p.name);
       const formattedPrice = p.currency === 'USD' ? `$${p.price?.toFixed(2)} USD` : `Rp${p.price?.toLocaleString('id-ID') || '?'}`;
-      msg += `${status} <code>${p.id}</code> - ${safeName}${emailBadge} - ${formattedPrice}\n`;
+      msg += `${status} <code>${escapeHtml(p.id)}</code> - ${safeName}${emailBadge} - ${formattedPrice}\n`;
     }
     
     if (products.length > 15) {
-      msg += `\n<i>...and ${products.length - 15} more. Gunakan: /list ${adapter.code} &lt;keyword&gt; untuk filter.</i>`;
+      msg += `\n<i>...and ${products.length - 15} more. Gunakan: /list ${escapeHtml(adapter.code)} &lt;keyword&gt; untuk filter.</i>`;
     }
     
     await ctx.reply(msg, { parse_mode: 'HTML' });
@@ -74,32 +77,38 @@ const buyPreCheck = async (ctx: MyContext, supplierCode: string, productId: stri
         supplierCode_supplierProductId: { supplierCode: adapter.code, supplierProductId: productId },
       },
     });
+
+    const safeSupplierCode = escapeHtml(adapter.code);
+    const safeProductId = escapeHtml(productId);
+    const safeSupplierName = escapeHtml(adapter.displayName);
+    const safeProductName = escapeHtml(product.name);
+
     const mappingWarning = mapping
       ? ''
-      : `\n⚠️ *Produk belum dimapping\\!* Jalankan dulu:\n/map ${adapter.code} ${productId} <VL_PRODUCT_ID>\nJika dilanjutkan, transaksi akan parkir di NEEDS_REVIEW sampai dimapping & di-retry.\n`;
+      : `\n⚠️ <b>Produk belum dimapping!</b> Jalankan dulu:\n<code>/map ${safeSupplierCode} ${safeProductId} &lt;VL_PRODUCT_ID&gt;</code>\nJika dilanjutkan, transaksi akan parkir di <code>NEEDS_REVIEW</code> sampai dimapping &amp; di-retry.\n`;
 
     const totalFormatted = adapter.code === 'PDA' ? `$${total.toFixed(2)} USD` : `Rp${total.toLocaleString('id-ID')}`;
     const balanceBeforeFormatted = adapter.code === 'PDA' ? `$${balance.toFixed(2)} USD` : `Rp${balance.toLocaleString('id-ID')}`;
     const balanceAfterFormatted = adapter.code === 'PDA' ? `$${(balance - total).toFixed(2)} USD` : `Rp${(balance - total).toLocaleString('id-ID')}`;
 
-    let msg = `🛒 *Confirm Purchase*\n\n`;
-    msg += `Supplier: ${adapter.displayName} (${adapter.code})\n`;
-    msg += `Product: ${product.name}\n`;
+    let msg = `🛒 <b>Confirm Purchase</b>\n\n`;
+    msg += `Supplier: ${safeSupplierName} (<code>${safeSupplierCode}</code>)\n`;
+    msg += `Product: ${safeProductName}\n`;
     msg += `Qty: ${qty}\n`;
     if (emails && emails.length > 0) {
-      msg += `Emails: ${emails.join(', ')}\n`;
+      msg += `Emails: ${emails.map(e => escapeHtml(e)).join(', ')}\n`;
     }
     msg += `Total: ${totalFormatted}\n`;
     msg += `Balance: ${balanceBeforeFormatted} → ${balanceAfterFormatted}\n`;
     msg += mappingWarning;
 
     if (balance < total) {
-      await ctx.reply(`❌ Insufficient balance! \n${msg}`, { parse_mode: 'Markdown' });
+      await ctx.reply(`❌ Insufficient balance!\n\n${msg}`, { parse_mode: 'HTML' });
       return;
     }
 
     await ctx.reply(msg, {
-      parse_mode: 'Markdown',
+      parse_mode: 'HTML',
       reply_markup: {
         inline_keyboard: [
           [
@@ -180,12 +189,12 @@ export const handleTextMessage = async (ctx: MyContext) => {
           break;
         }
         await ctx.reply(
-          `*TX Status: ${command.txId}*\n` +
-          `Status: \`${tx.status}\`\n` +
-          `Product: ${tx.vlProductId} (x${tx.qty})\n` +
-          `Updated: ${tx.updatedAt.toLocaleString()}\n` +
-          `Error: ${tx.lastError || 'None'}`,
-          { parse_mode: 'Markdown' }
+          `<b>TX Status: ${escapeHtml(command.txId || '')}</b>\n` +
+          `Status: <code>${escapeHtml(tx.status)}</code>\n` +
+          `Product: ${escapeHtml(tx.vlProductId)} (x${tx.qty})\n` +
+          `Updated: ${escapeHtml(tx.updatedAt.toLocaleString())}\n` +
+          `Error: ${escapeHtml(tx.lastError || 'None')}`,
+          { parse_mode: 'HTML' }
         );
         break;
       }
@@ -199,34 +208,34 @@ export const handleTextMessage = async (ctx: MyContext) => {
           await ctx.reply('No pending transactions.');
           break;
         }
-        let msg = `*Pending Transactions:*\n\n`;
+        let msg = `<b>Pending Transactions:</b>\n\n`;
         for (const tx of pending) {
-          msg += `\`${tx.transactionId}\` - ${tx.status}\n`;
+          msg += `<code>${escapeHtml(tx.transactionId)}</code> - <code>${escapeHtml(tx.status)}</code>\n`;
         }
-        await ctx.reply(msg, { parse_mode: 'Markdown' });
+        await ctx.reply(msg, { parse_mode: 'HTML' });
         break;
       }
       case 'balance': {
         if (!command.supplierCode || command.supplierCode === 'ALL') {
           const adapters = supplierFactory.getAllAdapters();
-          let msg = `💰 *Multi-Supplier Balances:*\n\n`;
+          let msg = `💰 <b>Multi-Supplier Balances:</b>\n\n`;
           for (const adapter of adapters) {
             try {
               const bal = await adapter.getBalance();
               const formatted = (adapter.code === 'PDA' || adapter.code === 'DAI') ? `$${bal.toFixed(2)} USD` : `Rp${bal.toLocaleString('id-ID')}`;
-              msg += `• *${adapter.displayName}* (\`${adapter.code}\`): ${formatted}\n`;
+              msg += `• <b>${escapeHtml(adapter.displayName)}</b> (<code>${escapeHtml(adapter.code)}</code>): ${formatted}\n`;
             } catch (err: any) {
-              msg += `• *${adapter.displayName}* (\`${adapter.code}\`): ⚠️ Error (${err.message})\n`;
+              msg += `• <b>${escapeHtml(adapter.displayName)}</b> (<code>${escapeHtml(adapter.code)}</code>): ⚠️ Error (${escapeHtml(err.message)})\n`;
             }
           }
-          await ctx.reply(msg, { parse_mode: 'Markdown' });
+          await ctx.reply(msg, { parse_mode: 'HTML' });
           break;
         }
 
         const adapter = supplierFactory.getAdapter(command.supplierCode);
         const bal = await adapter.getBalance();
         const formatted = (adapter.code === 'PDA' || adapter.code === 'DAI') ? `$${bal.toFixed(2)} USD` : `Rp${bal.toLocaleString('id-ID')}`;
-        await ctx.reply(`💰 *${adapter.displayName} Balance:*\n${formatted}`, { parse_mode: 'Markdown' });
+        await ctx.reply(`💰 <b>${escapeHtml(adapter.displayName)} Balance:</b>\n${formatted}`, { parse_mode: 'HTML' });
         break;
       }
       case 'suppliers': {
@@ -270,22 +279,22 @@ export const handleTextMessage = async (ctx: MyContext) => {
         const action = command.search || 'status';
         if (action === 'pause') {
           agentGuardrailService.setPaused(true);
-          await ctx.reply('⏸️ *Autonomous Purchasing Agent PAUSED*.\nEmergency kill switch engaged. Inbound requests will be rejected until resumed.', { parse_mode: 'Markdown' });
+          await ctx.reply('⏸️ <b>Autonomous Purchasing Agent PAUSED</b>.\nEmergency kill switch engaged. Inbound requests will be rejected until resumed.', { parse_mode: 'HTML' });
         } else if (action === 'resume') {
           agentGuardrailService.setPaused(false);
-          await ctx.reply('▶️ *Autonomous Purchasing Agent RESUMED*.\nAgent is now accepting requests and evaluating offers.', { parse_mode: 'Markdown' });
+          await ctx.reply('▶️ <b>Autonomous Purchasing Agent RESUMED</b>.\nAgent is now accepting requests and evaluating offers.', { parse_mode: 'HTML' });
         } else {
           const s = agentGuardrailService.getSettings();
           await ctx.reply(
-            `🤖 *Agent Guardrail Settings (P2a)*:\n\n` +
-            `• Status: ${s.paused ? '⏸️ *PAUSED*' : s.enabled ? '✅ *ACTIVE*' : '❌ *DISABLED*'}\n` +
+            `🤖 <b>Agent Guardrail Settings (P2a)</b>:\n\n` +
+            `• Status: ${s.paused ? '⏸️ <b>PAUSED</b>' : s.enabled ? '✅ <b>ACTIVE</b>' : '❌ <b>DISABLED</b>'}\n` +
             `• Per-Request Cap: Rp${s.maxSpendPerRequest.toLocaleString('id-ID')}\n` +
             `• Daily Spend Cap: Rp${s.maxSpendPerDay.toLocaleString('id-ID')}\n` +
             `• Min Balance Floor: Rp${s.minBalanceFloor.toLocaleString('id-ID')}\n` +
-            `• Allowed Suppliers: \`${s.allowedSuppliers.join(', ')}\`\n` +
+            `• Allowed Suppliers: <code>${escapeHtml(s.allowedSuppliers.join(', '))}</code>\n` +
             `• High Value Threshold: Rp${s.highValueThreshold.toLocaleString('id-ID')}\n\n` +
-            `Use \`/agent pause\` or \`/agent resume\` to control kill switch.`,
-            { parse_mode: 'Markdown' }
+            `Use <code>/agent pause</code> or <code>/agent resume</code> to control kill switch.`,
+            { parse_mode: 'HTML' }
           );
         }
         break;
@@ -335,32 +344,32 @@ export const handleTextMessage = async (ctx: MyContext) => {
         });
 
         const action = existing
-          ? `diperbarui (sebelumnya \`${existing.vlProductId}\`)`
+          ? `diperbarui (sebelumnya <code>${escapeHtml(existing.vlProductId)}</code>)`
           : 'dibuat';
         await ctx.reply(
           `✅ Mapping ${action}\n` +
-          `Supplier: \`${supplierCode}\`\n` +
-          `Supplier product ID: \`${supplierProductId}\`\n` +
-          `VendingLink product ID: \`${vlProductId}\``,
-          { parse_mode: 'Markdown' }
+          `Supplier: <code>${escapeHtml(supplierCode)}</code>\n` +
+          `Supplier product ID: <code>${escapeHtml(supplierProductId)}</code>\n` +
+          `VendingLink product ID: <code>${escapeHtml(vlProductId)}</code>`,
+          { parse_mode: 'HTML' }
         );
         break;
       }
       case 'help':
         await ctx.reply(
-          '🤖 *VendingLink Bridge*\n\n' +
+          '🤖 <b>VendingLink Bridge</b>\n\n' +
           'Commands:\n' +
-          '• `/list <SUPPLIER> [search]` - List products\n' +
-          '• `/buy <SUPPLIER> <PRODUCT_ID> <QTY> [emails]` - Buy products\n' +
-          '• `/balance [SUPPLIER|ALL]` - Check balances across suppliers\n' +
-          '• `/suppliers` - List dynamic and built-in suppliers\n' +
-          '• `/agent [pause|resume|status]` - Control autonomous procurement kill switch\n' +
-          '• `/status <TX_ID>` - Check tx status\n' +
-          '• `/pending` - List pending tx\n' +
-          '• `/retry <TX_ID>` - Force retry to VendingLink\n' +
-          '• `/map <SUPPLIER> <SUPPLIER_PRODUCT_ID> <VL_PRODUCT_ID>` - Register product mapping\n' +
-          '• `/cancel` - Cancel current operation',
-          { parse_mode: 'Markdown' }
+          '• <code>/list &lt;SUPPLIER&gt; [search]</code> - List products\n' +
+          '• <code>/buy &lt;SUPPLIER&gt; &lt;PRODUCT_ID&gt; [QTY] [emails]</code> - Buy products\n' +
+          '• <code>/balance [SUPPLIER|ALL]</code> - Check balances across suppliers\n' +
+          '• <code>/suppliers</code> - List dynamic and built-in suppliers\n' +
+          '• <code>/agent [pause|resume|status]</code> - Control autonomous procurement kill switch\n' +
+          '• <code>/status &lt;TX_ID&gt;</code> - Check tx status\n' +
+          '• <code>/pending</code> - List pending tx\n' +
+          '• <code>/retry &lt;TX_ID&gt;</code> - Force retry to VendingLink\n' +
+          '• <code>/map &lt;SUPPLIER&gt; &lt;SUPPLIER_PRODUCT_ID&gt; &lt;VL_PRODUCT_ID&gt;</code> - Register product mapping\n' +
+          '• <code>/cancel</code> - Cancel current operation',
+          { parse_mode: 'HTML' }
         );
         break;
     }

@@ -3,6 +3,7 @@ import { logger } from '../../lib/logger';
 import { createPendingTransaction, resolveVlProductId } from '../../services/orchestrator';
 import { prisma } from '../../db';
 import { supplierOrderQueue } from '../../queues/queues';
+import { escapeHtml } from '../router';
 
 export const handleCallbackQuery = async (ctx: MyContext) => {
   if (!ctx.callbackQuery || !('data' in ctx.callbackQuery)) return;
@@ -46,10 +47,10 @@ export const handleCallbackQuery = async (ctx: MyContext) => {
         const vlProductId = await resolveVlProductId(supplier, productId);
         if (!vlProductId) {
           await ctx.reply(
-            `❌ *Produk belum dimapping ke VendingLink*\.\n` +
-            `Jalankan dulu: \`/map ${supplier} ${productId} <VL_PRODUCT_ID>\`\n` +
-            `Pembelian tidak dilanjutkan\.`,
-            { parse_mode: 'MarkdownV2' }
+            `❌ <b>Produk belum dimapping ke VendingLink</b>.\n` +
+            `Jalankan dulu: <code>/map ${escapeHtml(supplier)} ${escapeHtml(productId)} &lt;VL_PRODUCT_ID&gt;</code>\n` +
+            `Pembelian tidak dilanjutkan.`,
+            { parse_mode: 'HTML' }
           );
           return;
         }
