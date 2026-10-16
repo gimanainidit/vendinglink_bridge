@@ -1,4 +1,4 @@
-import express from 'express';
+﻿import express from 'express';
 import path from 'path';
 import fs from 'fs';
 import pinoHttp from 'pino-http';
@@ -7,6 +7,7 @@ import { bot } from './telegram/bot';
 import { verifySecretMiddleware } from './telegram/middleware/verifySecret';
 import { requestsRouter } from './routes/requests.routes';
 import { suppliersRouter } from './routes/suppliers.routes';
+import { hermesRouter } from './routes/hermes.routes';
 
 export const createApp = () => {
   const app = express();
@@ -56,10 +57,10 @@ export const createApp = () => {
   </head>
   <body>
     <div class="nav-bar">
-      <span><strong>VendingLink Bridge</strong> — API Documentation</span>
+      <span><strong>VendingLink Bridge</strong> â€” API Documentation</span>
       <div>
-        <a href="/swagger">🚀 Open Interactive Swagger Console (Sandbox & Test)</a>
-        <a href="/docs/openapi.yaml" target="_blank">📄 OpenAPI YAML</a>
+        <a href="/swagger">ðŸš€ Open Interactive Swagger Console (Sandbox & Test)</a>
+        <a href="/docs/openapi.yaml" target="_blank">ðŸ“„ OpenAPI YAML</a>
       </div>
     </div>
     <redoc spec-url="/docs/openapi.yaml" expand-responses="201,409"></redoc>
@@ -75,7 +76,7 @@ export const createApp = () => {
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>VendingLink Bridge — Interactive Swagger Console</title>
+  <title>VendingLink Bridge â€” Interactive Swagger Console</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css" />
   <style>
     body { margin: 0; padding: 0; background: #fafafa; font-family: sans-serif; }
@@ -86,10 +87,10 @@ export const createApp = () => {
 </head>
 <body>
   <div class="nav-banner">
-    <span><strong>VendingLink Bridge</strong> — Swagger Sandbox & Interactive Console</span>
+    <span><strong>VendingLink Bridge</strong> â€” Swagger Sandbox & Interactive Console</span>
     <div>
-      <a href="/docs">📖 Redoc View</a>
-      <a href="/docs/openapi.yaml" target="_blank">📄 OpenAPI Spec</a>
+      <a href="/docs">ðŸ“– Redoc View</a>
+      <a href="/docs/openapi.yaml" target="_blank">ðŸ“„ OpenAPI Spec</a>
     </div>
   </div>
   <div id="swagger-ui"></div>
@@ -123,6 +124,8 @@ export const createApp = () => {
   app.use('/api/v1/requests', requestsRouter);
   // Dynamic Supplier Ingress API (P2b)
   app.use('/api/v1/suppliers', suppliersRouter);
+  // Hermes Agent Runner Ingress API (Telemetry & Dynamic Config)
+  app.use('/api/v1/hermes', hermesRouter);
 
   // Telegram webhook will be mounted here
   app.post('/webhook/telegram', verifySecretMiddleware, bot.webhookCallback('/webhook/telegram'));
@@ -140,3 +143,4 @@ export const createApp = () => {
 
   return app;
 };
+

@@ -636,10 +636,10 @@ export const handleTextMessage = async (ctx: MyContext) => {
       case 'agent': {
         const action = command.search || 'status';
         if (action === 'pause') {
-          agentGuardrailService.setPaused(true);
+          await agentGuardrailService.setPaused(true);
           await ctx.reply('⏸️ <b>Autonomous Purchasing Agent PAUSED</b>.\nEmergency kill switch engaged. Inbound requests will be rejected until resumed.', { parse_mode: 'HTML' });
         } else if (action === 'resume') {
-          agentGuardrailService.setPaused(false);
+          await agentGuardrailService.setPaused(false);
           await ctx.reply('▶️ <b>Autonomous Purchasing Agent RESUMED</b>.\nAgent is now accepting requests and evaluating offers.', { parse_mode: 'HTML' });
         } else {
           const s = agentGuardrailService.getSettings();

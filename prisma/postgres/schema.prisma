@@ -139,3 +139,16 @@ model Supplier {
 
   @@index([status])
 }
+
+model AgentOperationalConfig {
+  id                 String    @id @default("default")
+  maxSpendPerRequest Float     @default(500000)
+  maxSpendPerDay     Float     @default(5000000)
+  minBalanceFloor    Float     @default(200000)
+  priceDeltaAlertPct Float     @default(20)
+  highValueThreshold Float     @default(1000000)
+  isAgentEnabled     Boolean   @default(true)
+  updatedBy          String?
+  approvedAt         DateTime?
+  updatedAt          DateTime  @updatedAt
+}

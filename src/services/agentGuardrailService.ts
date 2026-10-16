@@ -2,8 +2,16 @@ import { env } from '../config/env';
 import { prisma } from '../db';
 import { logger } from '../lib/logger';
 
-// Runtime pause flag controllable via Telegram bot (/agent pause | /agent resume)
+// In-memory cache for fast evaluation and test compatibility
 let isAgentPausedRuntime = false;
+let cachedConfig: {
+  maxSpendPerRequest: number;
+  maxSpendPerDay: number;
+  minBalanceFloor: number;
+  priceDeltaAlertPct: number;
+  highValueThreshold: number;
+  isAgentEnabled: boolean;
+} | null = null;
 
 export interface GuardrailCheckResult {
   allowed: boolean;
@@ -16,40 +24,122 @@ export const agentGuardrailService = {
     return isAgentPausedRuntime;
   },
 
-  setPaused(paused: boolean): void {
+  async setPaused(paused: boolean, updatedBy: string = 'admin'): Promise<void> {
     isAgentPausedRuntime = paused;
-    logger.info({ isPaused: paused }, 'Agent runtime status changed');
+    if (!cachedConfig) {
+      cachedConfig = {
+        maxSpendPerRequest: env.AGENT_MAX_SPEND_PER_REQUEST,
+        maxSpendPerDay: env.AGENT_MAX_SPEND_PER_DAY,
+        minBalanceFloor: env.AGENT_MIN_BALANCE_FLOOR,
+        priceDeltaAlertPct: env.AGENT_PRICE_DELTA_ALERT_PCT,
+        highValueThreshold: env.AGENT_HIGH_VALUE_THRESHOLD,
+        isAgentEnabled: !paused,
+      };
+    } else {
+      cachedConfig.isAgentEnabled = !paused;
+    }
+    logger.info({ isPaused: paused, updatedBy }, 'Agent runtime status changed');
+
+    try {
+      await prisma.agentOperationalConfig.upsert({
+        where: { id: 'default' },
+        create: {
+          id: 'default',
+          maxSpendPerRequest: env.AGENT_MAX_SPEND_PER_REQUEST,
+          maxSpendPerDay: env.AGENT_MAX_SPEND_PER_DAY,
+          minBalanceFloor: env.AGENT_MIN_BALANCE_FLOOR,
+          priceDeltaAlertPct: env.AGENT_PRICE_DELTA_ALERT_PCT,
+          highValueThreshold: env.AGENT_HIGH_VALUE_THRESHOLD,
+          isAgentEnabled: !paused,
+          updatedBy,
+          approvedAt: new Date(),
+        },
+        update: {
+          isAgentEnabled: !paused,
+          updatedBy,
+          approvedAt: new Date(),
+        },
+      });
+    } catch (err: any) {
+      logger.warn({ err: err.message }, 'Failed to persist agent status to AgentOperationalConfig in DB');
+    }
   },
 
   isEnabled(): boolean {
     return env.AGENT_ENABLED && !isAgentPausedRuntime;
   },
 
-  getSettings() {
+  async getOperationalConfig() {
+    try {
+      const dbConfig = await prisma.agentOperationalConfig.findUnique({
+        where: { id: 'default' },
+      });
+      if (dbConfig) {
+        cachedConfig = {
+          maxSpendPerRequest: dbConfig.maxSpendPerRequest,
+          maxSpendPerDay: dbConfig.maxSpendPerDay,
+          minBalanceFloor: dbConfig.minBalanceFloor,
+          priceDeltaAlertPct: dbConfig.priceDeltaAlertPct,
+          highValueThreshold: dbConfig.highValueThreshold,
+          isAgentEnabled: dbConfig.isAgentEnabled,
+        };
+        isAgentPausedRuntime = !dbConfig.isAgentEnabled;
+        return dbConfig;
+      }
+    } catch (err: any) {
+      logger.warn({ err: err.message }, 'Failed to read AgentOperationalConfig from DB, falling back to env');
+    }
+
     return {
-      enabled: env.AGENT_ENABLED,
-      paused: isAgentPausedRuntime,
+      id: 'default',
       maxSpendPerRequest: env.AGENT_MAX_SPEND_PER_REQUEST,
       maxSpendPerDay: env.AGENT_MAX_SPEND_PER_DAY,
       minBalanceFloor: env.AGENT_MIN_BALANCE_FLOOR,
-      allowedSuppliers: env.AGENT_ALLOWED_SUPPLIER_CODES.split(',').map((s) => s.trim().toUpperCase()),
+      priceDeltaAlertPct: env.AGENT_PRICE_DELTA_ALERT_PCT,
       highValueThreshold: env.AGENT_HIGH_VALUE_THRESHOLD,
+      isAgentEnabled: env.AGENT_ENABLED && !isAgentPausedRuntime,
+      updatedBy: 'env-default',
+      approvedAt: null,
+      updatedAt: new Date(),
     };
   },
 
-  /**
-   * Evaluates autonomous procurement guardrails in priority order:
-   * AGENT_ENABLED > allowlist > per-request cap > daily cap > high value threshold
-   */
+  getSettings() {
+    const dynamic = cachedConfig || {
+      maxSpendPerRequest: env.AGENT_MAX_SPEND_PER_REQUEST,
+      maxSpendPerDay: env.AGENT_MAX_SPEND_PER_DAY,
+      minBalanceFloor: env.AGENT_MIN_BALANCE_FLOOR,
+      priceDeltaAlertPct: env.AGENT_PRICE_DELTA_ALERT_PCT,
+      highValueThreshold: env.AGENT_HIGH_VALUE_THRESHOLD,
+      isAgentEnabled: !isAgentPausedRuntime,
+    };
+
+    return {
+      enabled: env.AGENT_ENABLED && dynamic.isAgentEnabled,
+      paused: isAgentPausedRuntime || !dynamic.isAgentEnabled,
+      // Layer 1 Hard Caps: Dynamic config cannot exceed hard ceiling in env
+      maxSpendPerRequest: Math.min(dynamic.maxSpendPerRequest, env.AGENT_MAX_SPEND_PER_REQUEST),
+      maxSpendPerDay: Math.min(dynamic.maxSpendPerDay, env.AGENT_MAX_SPEND_PER_DAY),
+      minBalanceFloor: Math.max(dynamic.minBalanceFloor, env.AGENT_MIN_BALANCE_FLOOR),
+      priceDeltaAlertPct: dynamic.priceDeltaAlertPct,
+      allowedSuppliers: env.AGENT_ALLOWED_SUPPLIER_CODES.split(',').map((s) => s.trim().toUpperCase()),
+      highValueThreshold: dynamic.highValueThreshold,
+    };
+  },
+
   async evaluateGuardrail(params: {
     quotedPrice: number;
     supplierCode: string;
   }): Promise<GuardrailCheckResult> {
     const { quotedPrice, supplierCode } = params;
+
+    // Refresh dynamic operational config from DB if possible
+    await this.getOperationalConfig();
+
     const settings = this.getSettings();
 
     // 1. Master Kill Switch / Agent Enabled
-    if (!settings.enabled) {
+    if (!env.AGENT_ENABLED) {
       return { allowed: false, reason: 'Autonomous purchasing agent is disabled globally in configuration.' };
     }
     if (settings.paused) {

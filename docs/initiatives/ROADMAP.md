@@ -147,18 +147,19 @@ Uji restore otomatis mingguan ke database sementara + validasi jumlah baris.
 
 **Pekerjaan bridge (v1.1-BR):**
 
-- [x] BR-8a: Tambah `rclone` ke service `db-backup` di `docker-compose.yml`.
+- [X] BR-8a: Tambah `rclone` ke service `db-backup` di `docker-compose.yml`.
   Konfigurasi env: `BACKUP_RCLONE_REMOTE` (nama remote rclone, misal `gdrive:backups/bridge`).
-- [x] BR-8b: Enkripsi dump sebelum upload. Gunakan `openssl enc -aes-256-cbc` dengan kunci
+- [X] BR-8b: Enkripsi dump sebelum upload. Gunakan `openssl enc -aes-256-cbc` dengan kunci
   `BACKUP_ENCRYPTION_KEY` yang **disimpan terpisah dari VPS** (misalnya di password manager atau
   secret store terpisah dari `KEYS_ENCRYPTION_KEY`).
-- [x] BR-8c: Perbarui `scripts/export_decrypted.ts` — tambah flag `--plaintext` yang wajib
+- [X] BR-8c: Perbarui `scripts/export_decrypted.ts` — tambah flag `--plaintext` yang wajib
   eksplisit. Default output dienkripsi dengan `KEYS_ENCRYPTION_KEY` yang sudah ada.
-- [x] BR-8d: Tambah script `scripts/verify_backup.sh` — restore dump terakhir ke DB `bridge_verify`,
+- [X] BR-8d: Tambah script `scripts/verify_backup.sh` — restore dump terakhir ke DB `bridge_verify`,
   bandingkan `SELECT COUNT(*) FROM "Transaction"`, kirim hasil ke Telegram admin.
-- [x] BR-8e: Dokumentasikan prosedur escrow kunci di `docs/operations/key-escrow.md`.
-- [x] BR-8f: Tambah env vars baru ke `src/config/env.ts` (Zod schema) dan `.env.example`.
-- [x] BR-8g: Perbaiki contoh `KEYS_ENCRYPTION_KEY` di `README.md:52`.
+- [X] BR-8e: Dokumentasikan prosedur escrow kunci di `docs/operations/key-escrow.md`.
+- [X] BR-8f: Tambah env vars baru ke `src/config/env.ts` (Zod schema) dan `.env.example`.
+- [X] BR-8g: Perbaiki contoh `KEYS_ENCRYPTION_KEY=1234567890=` di `README.md:52` — bukan 32-byte
+  valid dan berisiko disalin apa adanya.
 
 **Acceptance criteria:**
 - Backup harian berhasil tersimpan di remote storage yang terpisah dari VPS.
@@ -169,154 +170,199 @@ Uji restore otomatis mingguan ke database sementara + validasi jumlah baris.
 
 ---
 
-### [Storefront & Bridge] Item 5 — Fondasi Multi-Supplier & Kategorisasi Produk
+### [Storefront] Item 5 — Kategorisasi Produk
+
+**Kondisi sekarang (gap) — di sisi bridge:**
+- Model `ProductMapping` ada di `prisma/schema.base.prisma:72-80` tapi tidak direferensikan
+  satu baris pun di `src/` (grep `ProductMapping` → 0 hasil).
+- `src/services/orchestrator.ts:26`: `vlProductId = "[UNKNOWN]"` — mapping produk ke VendingLink
+  belum diimplementasi.
+- `ISupplierAdapter` tidak memiliki field `category` di tipe `Product` (`src/suppliers/types.ts`).
+
+**Kondisi sekarang (gap) — di sisi storefront:**
+- Tidak ada model Category atau tag pada produk (tidak dapat diverifikasi karena repo terpisah,
+  tapi menjadi prasyarat fitur voucher per-kategori, konten panduan, dan listing Shopee).
 
 **Kondisi target (to-be):**
-Multi-supplier terintegrasi secara modular (`RezekiShop` & `PrimeDigital`). Storefront memiliki model kategori hierarkis. Bridge memperbarui `ProductMapping` saat admin melakukan mapping dari bot. Tipe `Product` di bridge diperluas dengan `categorySlug?: string`, `tags?: string[]`, `currency?: string`, dan `supplierCode?: string`.
+
+Storefront memiliki model kategori hierarkis. Bridge memperbarui `ProductMapping` saat admin
+melakukan mapping dari bot atau dari UI storefront. Tipe `Product` di bridge diperluas dengan
+`categoryId?: string` dan `tags?: string[]`.
 
 **Pekerjaan bridge (v1.1-BR):**
 
 - [x] BR-5a: Implementasikan penggunaan `ProductMapping` di `orchestrator.ts` —
   resolve `vlProductId` dari tabel `ProductMapping` berdasarkan `supplierCode` + `supplierProductId`,
-  fallback ke `[UNMAPPED]` jika tidak ditemukan (dengan warning di log).
+  fallback ke pola lama `[UNKNOWN]` hanya jika tidak ditemukan (dengan warning).
 - [x] BR-5b: Tambah command `/map <SUPPLIER> <SUPPLIER_PRODUCT_ID> <VL_PRODUCT_ID>` di
   `commandParser.ts` dan `router.ts` agar admin bisa mendaftarkan mapping dari Telegram.
-- [x] BR-5c: Tambah field opsional `categorySlug?: string`, `tags?: string[]`, `currency?: string`, dan `supplierCode?: string` ke tipe `Product` di `src/suppliers/types.ts`.
-- [x] BR-5d: `ISupplierAdapter.getProductList()` meneruskan `categorySlug` jika ada dari API supplier.
-- [x] BR-5e: Hard-block pembelian produk yang belum dimapping (`confirmBuy.ts` & `router.ts`).
-- [x] BR-5f: Implementasi adapter **Prime Digital AI (PDA)** (`src/suppliers/adapters/PrimeDigital.adapter.ts`) tipe Reseller Customer-linked dengan auth `X-API-Key` dan penanganan idempotency.
-- [x] BR-5g: Multi-supplier query & perbandingan cerdas di `SupplierFactory` (`getAllAdapters`, `listSuppliers`, `findBestOffer` berdasarkan stok & harga terendah sebagai fondasi P2).
+- [x] BR-5c: Tambah field opsional `categorySlug?: string` dan `tags?: string[]` ke tipe
+  `Product` di `src/suppliers/types.ts` (backward-compatible, opsional).
+- [x] BR-5d: `ISupplierAdapter.getProductList()` meneruskan `categorySlug` jika ada dari API
+  supplier. RezekiShop adapter dicek apakah endpoint `/v1/products` mengembalikan kategori.
 
 **Pekerjaan storefront (v1.1-ST):**
 
-- [x] ST-5a: Desain & migrasi skema `Category` (id, slug, name) dan relasi ke `Product`.
-- [x] ST-5b: Endpoint `PATCH /api/bridge/products/:vlProductId/category` (Bearer auth, rate limit, Zod).
-- [x] ST-5c: UI admin kategorisasi produk.
+- [x] ST-5a: Desain & migrasi skema `Category` (id, slug, name) dan relasi opsional ke
+  `Product` (`categoryId`, `onDelete: SetNull`).
+- [x] ST-5b: Endpoint `PATCH /api/bridge/products/:vlProductId/category` agar bridge atau admin
+  bisa set kategori saat mapping. Bearer-only, guard chain IP → rate-limit → bearer → Zod,
+  body `{ categorySlug: string }`, kode 200 / 400 INVALID_BODY / 401 / 403 / 404
+  PRODUCT_NOT_FOUND | CATEGORY_NOT_FOUND / 429 / 500.
+- [x] ST-5c: UI admin kategorisasi (bisa sederhana: dropdown saat edit produk).
 
 **Acceptance criteria:**
-- `vlProductId` tidak lagi `[UNKNOWN]` atau `[UNMAPPED]` untuk produk yang sudah dimapping.
+- `vlProductId` tidak lagi `[UNKNOWN]` untuk produk yang sudah dimapping.
 - `/map RZK <id_supplier> <id_vl>` berhasil menyimpan ke `ProductMapping` dan dikonfirmasi bot.
-- `/buy` untuk produk yang belum dimapping: warning tampil di pre-check, dan jika admin tetap
-  menekan Confirm, transaksi **ditolak** (uang tidak keluar) dengan instruksi `/map`.
-- Storefront mengembalikan `{ "error": "PRODUCT_NOT_MAPPED", "supplier_code": "...", "supplier_product_id": "..." }`
-  untuk payload dengan `product_id` yang tidak dikenal.
-- Kategori terpilih tampil di katalog storefront (ST-5a/5b).
+- Kategori terpilih tampil di katalog storefront.
+- `PATCH /api/bridge/products/:vlProductId/category` hanya bisa diakses dengan bearer token valid,
+  mengembalikan `CATEGORY_NOT_FOUND` jika slug tidak ada, dan tidak pernah membuat kategori baru.
 
 ---
 
 ## 5. Sprint P1 — Program Promo & Loyalitas (v1.2)
 
 > **Prasyarat:** v1.1 (P0) selesai. Item 2 (Referral) dan Item 1 (Loyalty/Broadcast) dikerjakan
-> sebagai satu engine, bukan dua fitur terpisah. Item 3 (Voucher Berjadwal) menumpang engine
-> yang sama. Semua pekerjaan P1 ada di sisi **storefront** kecuali yang bertanda [Bridge].
+> sebagai **dua engine terpisah**, dipisah berdasarkan siapa yang menciptakan nilai (lihat
+> `docs/initiatives/PROMO_ENGINE_DESIGN.md` untuk desain lengkap + rencana migrasi): Engine A
+> `CustomerCredit` (akrual: komisi referral, refund stockout) dan Engine B `VoucherRule` +
+> `VoucherRedemption` (aturan admin: voucher manual, promo terjadwal, diskon customer baru).
+> Item 3 (Voucher Berjadwal) menumpang Engine B. Semua pekerjaan P1 ada di sisi **storefront**
+> kecuali yang bertanda [Bridge].
 
 ### [Storefront] Item 2 + 1 — Referral & Loyalty Engine
 
 **Kondisi sekarang (gap):**
-- Tidak ada entitas Customer atau nomor HP di sistem manapun yang terobservasi.
-- Tidak ada mekanisme consent promo.
-- Tidak ada kode referral, voucher, atau akrual reward.
+- [x] Customer + ReferralCode + consent sudah ada (ST-2a-1, selesai sprint sebelumnya).
+- Belum ada engine kredit akrual (`CustomerCredit`), engine voucher (`VoucherRule`), atau payout.
+- `PromoCode` (stockout refund) dan `Voucher` (diskon admin) model lama tumpang-tindih secara semantik dan **overload `Transaction.promoCodeId`** (arti "kode dipakai" di checkout VS "kode diterbitkan" di `transactionStatus.ts` — bug nyata, lihat Tech Debt TD-8).
+- `lib/discount.ts` adalah dead code — nol caller, test-nya mock seluruh modul (TD-9).
 
 **Kondisi target — skema storefront (to-be):**
 
 ```
-Customer
-  id          CUID
-  phone       String  UNIQUE  -- wajib normalisasi E.164 sebelum simpan
-  name        String?
-  consentPromoAt  DateTime?   -- NULL = tidak boleh dibroadcast, tanpa pengecualian
-  createdAt   DateTime
+Customer                              -- [x] sudah ada
+  id, phone UNIQUE, name, consentPromoAt, createdAt
 
-ReferralCode
-  code        String  UNIQUE  -- 8 karakter, dibuat saat Customer dibuat
-  ownerId     String  -> Customer.id
-  active      Boolean
+ReferralCode                          -- [x] sudah ada
+  code UNIQUE (13 char), customerId -> Customer.id
 
-VoucherRule
-  id          CUID
-  kind        Enum: REFERRAL_NEW | REFERRAL_OLD | SCHEDULED | LOYALTY
-  discountType Enum: PERCENT | FIXED_IDR
-  value       Float
-  minSpend    Float   DEFAULT 0
-  validFrom   DateTime  -- UTC
-  validUntil  DateTime  -- WAJIB non-null untuk SCHEDULED
-  quotaTotal  Int?    -- null = tidak terbatas
+ProgramConfig                         -- singleton, admin-editable, pola sama dgn SupplierConfig
+  id
+  referralCommissionPct  Int     -- basis komisi: Transaction.finalAmount (bukan originalPrice)
+  referralCommissionCap  Int?    -- cap Rupiah per transaksi, opsional
+  refereeDiscountValue   Int     -- diskon tetap utk customer baru yg pakai referral code
+  accrualWindowDays      Int     DEFAULT 15  -- hard ceiling 15, validasi tolak input > 15
+  minPayoutAmount        Int     DEFAULT 20000
+  updatedBy / updatedAt
+
+CustomerCredit                        -- Engine A: ledger akrual
+  id
+  customerId      String?  -> Customer.id   -- nullable: refund stockout tanpa Customer match
+  claimCode       String?  UNIQUE           -- hanya utk STOCKOUT_REFUND
+  kind            Enum: STOCKOUT_REFUND | REFERRAL_COMMISSION
+  amount          Int                       -- selalu CASH utk REFERRAL_COMMISSION (D4)
+  appliedRatePct  Int?                      -- snapshot ProgramConfig.referralCommissionPct saat akrual
+  status          Enum: ACCRUED | PAYABLE | REDEEMED | PAID | VOID | EXPIRED
+  sourceTxnId     String?                   -- order pemicu
+  consumedTxnId   String?                   -- order yg memakai credit sbg diskon (STOCKOUT_REFUND)
+  referralCodeId  String?
+  payoutBatchId   String?  -> PayoutBatch.id
+  payableAt       DateTime?                 -- sourceTxn.paidAt + accrualWindowDays, dihitung saat akrual
+  expiresAt       DateTime?
+  createdAt / updatedAt
+  @@unique([kind, sourceTxnId])             -- idempotensi: satu order = satu credit per kind
+
+VoucherRule                           -- Engine B: aturan admin
+  id, code UNIQUE, name
+  kind            Enum: MANUAL | SCHEDULED | REFERRAL_NEW | LOYALTY
+  discountType    Enum: PERCENT | FIXED_IDR
+  value           Int
+  maxDiscount     Int?      -- wajib diisi admin utk PERCENT
+  minSpend        Int   DEFAULT 0
+  validFrom       DateTime  -- UTC
+  validUntil      DateTime? -- WAJIB non-null utk SCHEDULED
+  quotaTotal      Int?
   quotaPerCustomer Int DEFAULT 1
-  categoryId  String? -- opsional, filter per kategori (sambungan ke Item 5)
+  categoryId      String?
+  isActive        Boolean
+  usedCount       Int DEFAULT 0
 
 VoucherRedemption
-  id          CUID
-  ruleId      -> VoucherRule.id
-  customerId  -> Customer.id
-  orderId     String
-  redeemedAt  DateTime
-  @@unique([ruleId, customerId])  -- kunci anti-abuse: satu customer satu kali per rule
+  id, ruleId, customerId, transactionId, seq Int, redeemedAt
+  @@unique([ruleId, customerId, seq])  -- seq 1..quotaPerCustomer, tegakkan kuota >1 scr atomik
+  @@unique([ruleId, transactionId])    -- satu rule sekali per order
 
-ReferralReward
-  id          CUID
-  referrerId  -> Customer.id
-  refereeOrderId  String       -- order yang memicu reward
-  amount      Float
-  status      Enum: ACCRUED | PAYABLE | VOID | PAID
-  payoutBatchId  String?  -> PayoutBatch.id
+ReferralRedemption                    -- counter terpisah dari VoucherRedemption (B4: max 2x per kode)
+  id, referralCodeId, refereeCustomerId, transactionId, seq Int, redeemedAt
+  @@unique([referralCodeId, refereeCustomerId, seq])  -- seq 1..2
 
 PayoutBatch
-  id          CUID
-  period      String        -- contoh: "2026-10"
-  channel     Enum: GOPAY | OVO
-  totalAmount Float
-  status      Enum: DRAFT | APPROVED | PAID
-  approvedBy  String?       -- Telegram ID admin
-  approvedAt  DateTime?
-  createdAt   DateTime
+  id, period String, channel Enum: GOPAY | OVO | BANK_TRANSFER
+  totalAmount Int, status Enum: DRAFT | APPROVED | PAID
+  approvedBy String?, approvedAt DateTime?, createdAt DateTime
 ```
 
 **Guardrail yang menentukan program ini untung atau bocor:**
 
-- `phone` UNIQUE + normalisasi E.164 (`+628xxx`) **sebelum simpan**. Tanpa ini `0812` dan `+62812`
-  jadi dua orang berbeda dan self-referral terbuka.
-- Tolak redeem jika `referrer.phone == referee.phone` setelah normalisasi.
-- Reward naik ke `PAYABLE` hanya lewat cron job terjadwal, setelah order `COMPLETED` dan melewati
-  window refund. Reward saat order dibuat = bayar untuk order yang belum pasti.
-- Payout tetap **manual dengan dual-control**: sistem generate `PayoutBatch` + CSV, admin approve
-  via Telegram command/button, sistem tandai `PAID` beserta `approvedBy`. Jangan otomatiskan
-  transfer uang keluar di fase ini.
+- `phone` UNIQUE + normalisasi 628xxx tanpa `+` (format Saungwa) **sebelum simpan**.
+- **Self-referral:** tolak jika (a) `referrer.phone == referee.phone` setelah normalisasi — independen, hard reject — ATAU (b) kemiripan nama ternormalisasi ≥ 0.9 (Levenshtein) — independen, reject + flag admin. Dua kondisi OR, bukan AND: phone adalah UNIQUE jadi phone sama = orang yang sama secara definisi, nama tidak relevan lagi di jalur itu.
+- **Referral 1 tingkat saja** (B4): komisi hanya utk pemilik `ReferralCode` langsung, tidak berjenjang.
+- **Kuota referral code: max 2 redemption per (code, referee)** (B4), ditegakkan via `@@unique([referralCodeId, refereeCustomerId, seq])` dgn `seq` 1..2 — bukan `COUNT()` yang rawan race.
+- `CustomerCredit.status` naik ke `PAYABLE` hanya lewat cron job terjadwal, setelah order `PAID` + `stockStatus=FULFILLED` + `accrualWindowDays` (default 15, hard ceiling 15, admin-editable via `ProgramConfig`). Stockout tidak mendapat komisi; credit historis belum dibatch di-VOID sebelum payout.
+- **Slot cron sudah penuh** (`sync-supplier-stock`, `reconcile`). Akrual **menumpang** `/api/cron/reconcile` sbg fungsi terpisah (`lib/promo/accrual.ts`), dipanggil setelah blok rekonsiliasi. Idempoten by design via `payableAt` yang dihitung saat create, bukan saat eksekusi — aman terhadap presisi cron ±59 menit maupun piggyback di cron lain.
+- `CustomerCredit.appliedRatePct` adalah **snapshot**, bukan live-join ke `ProgramConfig`. Admin mengubah persentase komisi tidak boleh mengubah nilai utang yang sudah terakrual.
+- **Payout komisi referral = cash only** (D4), tujuan transfer = **nomor HP referrer sendiri** (B2) — GoPay/OVO/Dana di Indonesia terikat ke nomor HP, jadi `Customer.phone` sudah cukup sebagai identitas rekening tanpa model/field baru.
+- `minPayoutAmount` = Rp 20.000 (B3). Credit `PAYABLE` di bawah ambang tetap `PAYABLE` dan ikut batch berikutnya sampai akumulasinya lewat ambang.
+- Payout **manual**: sistem generate `PayoutBatch` + CSV, admin transfer manual di luar sistem, lalu menandai batch `PAID` beserta `approvedBy` lewat admin UI.
 - `consentPromoAt` NULL = tidak boleh masuk broadcast list. Tanpa pengecualian.
-- `validUntil` WAJIB non-null untuk VoucherRule dengan kind `SCHEDULED`.
+- `validUntil` WAJIB non-null untuk `VoucherRule` dengan kind `SCHEDULED`.
+- Kode referral & kode voucher dicek lewat **field input yang sama** di checkout (B5) — resolusi server berurutan: `ReferralCode` → `VoucherRule.code`.
+
+**Migrasi:** 3 gelombang aditif, lihat `PROMO_ENGINE_DESIGN.md`. Gelombang 1 = tabel+kolom baru, nol downtime. Gelombang 2 = backfill (`vouchers`→`voucher_rules`, `promo_codes`→`customer_credits`, `Customer` dibackfill dari `transactions.customerPhone` historis dgn `consentPromoAt=NULL`) + cutover kode. Gelombang 3 (cleanup kolom/tabel lama) **di luar sprint ini**.
 
 **Pekerjaan storefront (v1.2-ST):**
 
-- [ ] ST-2a: Migrasi skema — semua model di atas.
-- [ ] ST-2b: Endpoint registrasi Customer (`POST /api/customers`) dengan validasi + normalisasi phone.
-- [ ] ST-2c: Generasi `ReferralCode` otomatis saat Customer dibuat.
-- [ ] ST-2d: Endpoint redeem voucher di checkout — cek anti-abuse, quota, window waktu.
-- [ ] ST-2e: Cron job akrual reward: ACCRUED -> PAYABLE setelah N hari order COMPLETED.
-- [ ] ST-2f: Command Telegram `/payout preview <period>` untuk generate PayoutBatch + CSV.
-- [ ] ST-2g: Button "Approve" di pesan Telegram yang menandai batch APPROVED + catat `approvedBy`.
-- [ ] ST-1a: Broadcast promo ke segmen Customer yang `consentPromoAt IS NOT NULL`.
-  Integrasi dengan WhatsApp Business API atau platform broadcast pilihan.
-- [ ] ST-1b: Halaman opt-in consent dengan timestamp yang dicatat.
+- [x] ST-2a-1: Migrasi skema dasar — `Customer` + `ReferralCode` + consent + phone normalization.
+- [x] ST-2a-2: Migrasi skema engine — `ProgramConfig`, `CustomerCredit`, `VoucherRule`, `VoucherRedemption`, `ReferralRedemption`, `PayoutBatch`; migrasi gelombang 1+2; perbaiki bug `promoCodeId` overload (TD-8); hapus `lib/discount.ts` dead code (TD-9); konsolidasi `/api/voucher/validate` + `/api/promo-codes/validate` → `/api/discount/validate`.
+- [x] ST-2b: Endpoint registrasi Customer (`POST /api/customers`) dengan validasi + normalisasi phone.
+- [x] ST-2c: Generasi `ReferralCode` otomatis saat Customer dibuat.
+- [x] ST-2c-2: Tampilkan `ReferralCode` + copy benefit ("komisi jual s.d. [ProgramConfig.referralCommissionPct]%") di `CustomerSuccessScreen.tsx`.
+- [x] ST-2d: Endpoint redeem di checkout — resolusi referral/voucher dari field sama (B5), guard berurutan (rule aktif → window UTC → minSpend → kuota total → kuota per-customer → self-referral).
+- [x] ST-2e: Fungsi akrual `CustomerCredit`: ACCRUED -> PAYABLE setelah `accrualWindowDays`, dipanggil dari `/api/cron/reconcile` (nebeng slot, lihat guardrail cron di atas).
+- [x] ST-2f: Admin UI generate `PayoutBatch` + CSV untuk periode tertentu (tujuan = nomor HP referrer; GoPay/OVO saja, transfer bank menunggu data rekening).
+- [x] ST-2f-2: Tabel payout batch di `/admin/reports`, ditambahkan di bagian bawah halaman yang ada.
+- [x] ST-2g: Tombol "Sudah Ditransfer" di admin UI yang menandai batch dan credit PAID + catat `approvedBy`.
+- [ ] ST-1a: Broadcast promo ke segmen Customer yang `consentPromoAt IS NOT NULL`. Integrasi dengan WhatsApp Business API atau platform broadcast pilihan. **Desain program broadcast ditunda ke sprint mendatang** — hanya daftar/listing yang masuk sprint ini (ST-1a-1).
+- [x] ST-1a-1: Halaman admin `/admin/customers` — list Customer + status consent + referral code + jumlah/total order. Prasyarat utk ST-1a nanti.
+- [x] ST-1b: Checkbox consent di form checkout saat nomor WhatsApp diisi, dengan timestamp yang dicatat.
+- [x] ST-1b-2: Checkbox consent default `true`; copy jelaskan bahwa mengisi no WA memberi consent utk riwayat pembelian, kode referral, dan info program marketing txsiber; peringatan inline (bukan hover-only, harus bekerja di sentuh/keyboard) saat di-uncheck bahwa customer tidak akan mendapat riwayat pembelian & benefit referral code; font size `text-xs` + warna `text-slate-400`.
+- [x] ST-1b-3 / TD-10: Gantikan pencarian prefix 8 digit yang masih membocorkan `redeemUrl`. GET hanya mengembalikan challenge lima produk untuk nomor dengan consent dan order PAID; POST memerlukan produk PAID terakhir + order ID bukti pembelian untuk membuka riwayat. Nomor legacy 08/62/+62 harus cocok utuh. Jika empat pengecoh tidak ada, fail closed; limiter 10/menit/IP. **Catatan:** in-memory limiter bukan lintas instance; perlu shared limiter sebelum skala horizontal.
+- [x] ST-1b-4: Customer `consentPromoAt=NULL` tidak menerima riwayat atau referral benefit via endpoint customer; transaksi tetap tersimpan/admin-visible. Opt-out checkout untuk nomor lama tidak boleh mencabut consent lewat nomor saja (tanpa bukti kepemilikan).
+- [ ] ST-1b-5: Alur pencabutan consent pelanggan lama yang terverifikasi (mis. proof-of-possession); setelah verifikasi, hapus `consentPromoAt` tanpa menghapus transaksi historis.
+- [x] ST-2d-2: Reservasi kuota untuk PENDING tidak dipersingkat untuk toko volume rendah; lepas voucher/referral (termasuk `REFERRAL_NEW` via `ReferralRedemption.ruleId` baru) secara atomik dan idempoten saat EXPIRED/CANCELLED; validasi window UTC juga saat reservasi dalam DB. Reservasi referral historis sebelum migrasi memiliki ruleId NULL dan memerlukan audit manual jika expired.
+- [x] ST-2e-2: Order OUT_OF_STOCK tidak mengakru komisi, credit lama ACCRUED/PAYABLE yang belum dibatch menjadi VOID; credit sudah PAID butuh rekonsiliasi manual.
+- [x] ST-2e-3: `/api/cron/reconcile` fail closed bila `CRON_SECRET` tidak diatur; secret server-side saja.
 
-**Pekerjaan bridge (v1.2-BR — P1 Handoff Alignment):**
-- [x] BR-P1-a: Sinkronisasi penanganan replay HTTP 409 (`COMPLETED` idempoten sukses vs `PROCESSING` in-flight retryable) di `src/vendinglink/vendingLinkClient.ts`.
-- [x] BR-P1-b: Implementasi test suite Vitest di `src/__tests__/` (12 unit & integration tests lulus, menutup TD-1).
-- [x] BR-P1-c: Update `docs/openapi.yaml` dan `VENDINGLINK_WEBHOOK_SPEC.md` selaras kontrak Storefront (status 201, skema replay 409, sandbox/local servers).
-- [x] BR-P1-d: Integrasi Swagger UI console di `/swagger` dan `/docs/swagger` untuk interactive test sandbox dan production.
-- [x] BR-P1-e: Review dan verifikasi matriks uji silang `docs/initiatives/P1_BRIDGE_HANDOFF_SPEC.md`.
+**Pekerjaan bridge (v1.2-BR):**
+- Tidak ada perubahan wajib di bridge untuk P1. Bridge hanya supplier data, bukan customer data.
 
-**Acceptance criteria Handoff P1:**
-- Topup baru dari bridge diterima Storefront dengan HTTP 201 (atau 409 bila duplikat COMPLETED).
-- Replay event berstatus PROCESSING di Storefront memicu retryable error di Bridge (tidak auto-complete).
-- Zero test files (TD-1) teratasi: `npm test` lulus 100% tanpa kegagalan.
-- Interactive Swagger UI aktif di `/swagger` dengan preset try-it-out untuk pengujian sandbox & production.
+**Acceptance criteria:**
+- Customer A pakai referral code Customer B: A dapat diskon (`VoucherRule` kind `REFERRAL_NEW`), B dapat `CustomerCredit` kind `REFERRAL_COMMISSION` status `ACCRUED`.
+- Self-referral ditolak lewat phone match ATAU name similarity ≥ 0.9, independen (OR).
+- Satu kode referral maksimal dipakai 2x oleh customer yang sama (`ReferralRedemption.seq` 1..2).
+- `CustomerCredit` tidak pernah `PAYABLE` sebelum order COMPLETED + `accrualWindowDays`.
+- Mengubah `ProgramConfig.referralCommissionPct` tidak mengubah `CustomerCredit` yang sudah terakrual.
+- Broadcast hanya terkirim ke customer dengan `consentPromoAt IS NOT NULL`.
+- CSV payout terbuat dari admin UI, admin transfer manual ke nomor HP referrer, lalu menandai batch PAID beserta `approvedBy`.
+- `/admin/reports` menampilkan tabel payout batch di bagian bawah halaman tanpa mengubah section yang ada.
 
 ---
 
 ### [Storefront] Item 3 — Voucher Berjadwal & Pop-up
 
 **Kondisi sekarang (gap):**
-- Belum ada engine voucher (dibangun di Item 2+1 di atas).
-- Tidak ada sistem notifikasi pop-up time-based di storefront.
+- Engine `VoucherRule` dari Item 2 telah ada; CRUD SCHEDULED dan pop-up time-based selesai.
 
 **Kondisi target (to-be):**
 - VoucherRule dengan `kind = SCHEDULED` + `validFrom`/`validUntil` UTC yang ketat.
@@ -325,17 +371,33 @@ PayoutBatch
 
 **Pekerjaan storefront (v1.2-ST lanjutan):**
 
-- [ ] ST-3a: UI admin buat VoucherRule dengan kind `SCHEDULED` — wajib input `validUntil`.
-- [ ] ST-3b: API endpoint untuk storefront frontend cek active promos:
+- [x] ST-3a: UI admin `/admin/voucher-rules` + API CRUD SCHEDULED — wajib input `validUntil` (hapus = nonaktif, agar redemption historis tidak hilang).
+- [x] ST-3b: API endpoint untuk storefront frontend cek active promos:
   `GET /api/promos/active` — kembalikan rules yang aktif sekarang.
-- [ ] ST-3c: Komponen pop-up di frontend yang memanggil endpoint di atas saat halaman dimuat.
-- [ ] ST-3d: Validasi server-side: tolak redeem jika `NOW() > validUntil` meski frontend bypass.
+- [x] ST-3c: Komponen pop-up di frontend yang memanggil endpoint di atas saat halaman dimuat dan refresh berkala 30 detik.
+- [x] ST-3d: Validasi server-side: tolak redeem jika `NOW() >= validUntil` meski frontend bypass; pemeriksaan ulang ketika reservasi kuota.
   Semua window waktu disimpan dan dievaluasi dalam UTC.
 
 **Acceptance criteria:**
 - Voucher dengan `validUntil` yang lewat tidak bisa dipakai meskipun kode diketik manual.
 - Pop-up muncul tepat saat `validFrom` tercapai dan hilang setelah `validUntil`.
 - Admin bisa buat promo baru dari UI tanpa deploy kode.
+
+### [Storefront] Refinements Bisnis P1 (Keputusan 1 s.d 5 — CLOSED · VERIFIED)
+- [x] **Keputusan 1 (Referee Discount & MinSpend):** Rule `REFERRAL_NEW` diskon 5% dari harga produk dengan `minSpend` Rp 50.000. Belanja di bawah Rp 50.000 ditolak dengan pesan yang jelas.
+- [x] **Keputusan 2 (Referral Commission Floor):** Ditetapkan `REFERRAL_COMMISSION_FLOOR = 100`. Setiap transaksi referee yang berhasil mendatangkan komisi minimal Rp 100 untuk referrer, bahkan untuk transaksi Rp 0.
+- [x] **Keputusan 3 (Penyatuan Dualisme Diskon & Labeling Admin):** Laporan penjualan (`/api/admin/reports` & UI `/admin/reports` + export CSV/GDrive) menyatukan riwayat diskon dari `VoucherRule`, `ReferralCode`, `PromoCode`, dan legacy `Voucher`. Label sidebar `/admin/voucher-rules` menjadi "Promo & Voucher" dan `/admin/vouchers` menjadi "Voucher (Legacy)".
+- [x] **Keputusan 4 (Audit Trail & paymentType FREE_PROMO):** Transaksi Rp 0 akibat diskon 100% diberi label `paymentType: "FREE_PROMO"` (bukan lagi `"MIDTRANS"`), mempermudah rekonsiliasi kas riil bank/Midtrans vs diskon promosi.
+- [x] **Keputusan 5 (Ekspektasi Payout Batch & Transparansi Kredit Referrer):** UI `/admin/reports` pada panel Payout Batch diperkaya dengan infobox masa tunggu 15 hari, ringkasan saldo PAYABLE/ACCRUED, dan tabel monitoring status kredit seluruh referrer via endpoint `GET /api/admin/payout-batches/summary`.
+
+### [Storefront] Initiative Cleanup 6 — Pembersihan Mode Supplier (AUTO & REZEKI) (CLOSED · VERIFIED)
+- **Konteks:** Menegakkan batas arsitektur (*Architectural Boundary*). Storefront tidak lagi memanggil API pembelian supplier secara langsung/sinkron saat checkout. Seluruh pasokan stok eksternal dilakukan secara asinkron oleh `vendinglink_bridge` ke tabel `RedeemStock`.
+- **Implementasi Terverifikasi:**
+  - **Fase 1 (Data & Normalisasi Aman):** Script `scripts/normalize-supplier-modes.ts` dan hook di `prisma/seed.ts` memastikan seluruh produk aktif berada pada `supplierMode = "MANUAL"`. Integritas DB produksi aman tanpa penghapusan kolom destruktif.
+  - **Fase 2 (Pruning Checkout):** Dihapus percabangan panggilan langsung Rezeki API di alur checkout customer (`/api/checkout/customer`), checkout agent (`/api/checkout/agent`), dan status settlement (`lib/transactionStatus.ts`). Pemenuhan stok 100% dipasok dari `RedeemStock`.
+  - **Fase 3 (Bridge Topup Unblock):** Dihapus penolakan 400 REZEKI di `lib/bridge/topup.ts`. Topup stok dari Bridge selalu berhasil masuk ke `RedeemStock`.
+  - **Fase 4 (Katalog & Admin UI):** Form admin inventory (`components/admin/SupplierProductLinker.tsx` & `app/admin/inventory/page.tsx`) mengunci mode ke `MANUAL` dan menyediakan input Bridge SKU/supplierProductId opsional. Tombol sync supplier dihapus dari inventory.
+  - **Fase 5 (Deprecasi Modul & Testing):** Modul `lib/suppliers/rezeki.ts` dan `lib/suppliers/sync.ts` dianotasi `@deprecated`. Suite pengujian `__tests__/api/cleanup-supplier-modes.test.ts` berhasil lulus 100%.
 
 ---
 
@@ -401,19 +463,36 @@ model ProductRequest {
 enum ProductRequestStatus {
   SEARCHING FOUND NOT_FOUND CONFIRMED PURCHASED EXPIRED
 }
+
+model AgentOperationalConfig {
+  id                 String    @id @default("default")
+  maxSpendPerRequest Float     @default(500000)
+  maxSpendPerDay     Float     @default(5000000)
+  minBalanceFloor    Float     @default(200000)
+  priceDeltaAlertPct Float     @default(20)
+  highValueThreshold Float     @default(1000000)
+  isAgentEnabled     Boolean   @default(true)
+  updatedBy          String?   -- admin username atau 'hermes-agent'
+  approvedAt         DateTime?
+  updatedAt          DateTime  @updatedAt
+}
 ```
 
-**Guardrail belanja otonom (env vars baru di `src/config/env.ts`):**
+**Guardrail belanja otonom (2-Layer Architecture):**
 
-```
-AGENT_ENABLED=true
-AGENT_MAX_SPEND_PER_REQUEST=500000   -- Rp 500rb per request
-AGENT_MAX_SPEND_PER_DAY=5000000     -- Rp 5jt agregat per hari
-AGENT_MIN_BALANCE_FLOOR=200000      -- Saldo tidak boleh di bawah ini
-AGENT_PRICE_DELTA_ALERT_PCT=20      -- Lonjakan >20% -> eskalasi admin
-AGENT_ALLOWED_SUPPLIER_CODES=RZK   -- CSV allowlist
-AGENT_HIGH_VALUE_THRESHOLD=1000000 -- Di atas ini -> konfirmasi manual
-```
+1. **Layer 1: Absolute Hard Boundaries (`src/config/env.ts`):**
+   Ceiling mutlak yang tidak dapat di-override oleh database, LLM, maupun tombol Telegram untuk mencegah kebangkrutan/kebocoran dana akibat anomali logic:
+   ```
+   AGENT_ENABLED=true
+   AGENT_HARD_MAX_SPEND_PER_REQUEST=1000000 -- Hard ceiling Rp 1jt per request
+   AGENT_HARD_MAX_SPEND_PER_DAY=10000000    -- Hard ceiling Rp 10jt per hari
+   AGENT_HARD_MIN_BALANCE_FLOOR=100000      -- Saldo mutlak tidak boleh di bawah Rp 100rb
+   AGENT_ALLOWED_SUPPLIER_CODES=RZK        -- CSV allowlist
+   ```
+2. **Layer 2: Dynamic Operational Config (`AgentOperationalConfig` di DB):**
+   Nilai operasional adaptif yang dievaluasi setiap transaksi (default fallback dari seed env).
+3. **Layer 3: Hermes Agent Analytics & Telegram HITL:**
+   Hermes Agent (berjalan di background worker/VPS terpisah) menganalisis kecepatan transaksi, tren produk paling dicari, dan saldo supplier via `getBalance()`. Hermes merumuskan rekomendasi limit harian baru dan mengirim Telegram alert interaktif dengan inline button approval (`[✅ Setujui]` / `[❌ Tolak]`). Approval admin langsung memperbarui `AgentOperationalConfig` secara instan tanpa restart container/redeploy.
 
 Urutan evaluasi (sebelum order): AGENT_ENABLED > allowlist > per-request cap >
 daily cap > balance floor > price delta > high value threshold.
@@ -421,24 +500,25 @@ daily cap > balance floor > price delta > high value threshold.
 
 **Pekerjaan bridge P2a:**
 
-- [x] BR-P2a-1: Cleanup `orchestrator.ts` — hapus stub dan import menganggur (VERIFIED TD-6).
-- [x] BR-P2a-2: Migrasi schema `ProductRequest` + enum ke `schema.base.prisma` (VERIFIED via `npm run db:push`).
-- [x] BR-P2a-3: Env vars guardrail ke `src/config/env.ts` + `.env.example` (VERIFIED: AGENT_* vars).
-- [x] BR-P2a-4: `POST /api/v1/requests` & `GET /api/v1/requests/:id` — Zod, Bearer auth, Idempotency-Key (VERIFIED).
-- [x] BR-P2a-5: `POST /api/v1/requests/:id/confirm` — trigger pembelian instan ke supplier terbaik (VERIFIED).
-- [x] BR-P2a-6: `productSearchQueue` + worker — parallel multi-supplier (`RZK`, `PDA`, `DAI`), timeout, guardrail, status update (VERIFIED).
-- [x] BR-P2a-7: Balance monitor & floor guardrail (`agentGuardrailService.evaluateGuardrail` + `/balance [ALL]`) (VERIFIED).
-- [x] BR-P2a-8: `/agent pause`, `/agent resume`, `/agent status` di parser + router Telegram (VERIFIED).
-- [x] BR-P2a-9: `/balance all` — cek semua supplier aktif (`RZK`, `PDA`, `DAI`) (VERIFIED).
-- [x] BR-P2a-10: Notif ke storefront `POST {VL_URL}/api/bridge/webhook/request-update` (`requestNotifier.ts`) (VERIFIED).
-- [x] BR-P2a-11: Test coverage guardrail & inbound API di Vitest (`agentPurchasingP2a.test.ts`, 47 tests passed) (VERIFIED).
+- [x] BR-P2a-1: Cleanup `orchestrator.ts` — hapus stub dan import menganggur.
+- [x] BR-P2a-2: Migrasi schema `ProductRequest` + `AgentOperationalConfig` + enum ke `schema.base.prisma`.
+- [x] BR-P2a-3: Env vars hard ceiling guardrail ke `src/config/env.ts` + `.env.example`.
+- [x] BR-P2a-4: `POST /api/v1/requests` — Zod, rate-limit, Bearer auth.
+- [x] BR-P2a-5: `POST /api/v1/requests/:id/confirm`.
+- [x] BR-P2a-6: `productSearchQueue` + worker — parallel, timeout, dynamic guardrail evaluation, status update.
+- [x] BR-P2a-7: Balance monitor + metrics exporter — cron 30 menit, alert Telegram di bawah floor, feed metrics untuk Hermes analytics.
+- [x] BR-P2a-8: Telegram bot handler: `/agent pause`, `/agent resume`, dan callback query listener untuk inline button approval dynamic guardrail.
+- [x] BR-P2a-9: `/balance all` — cek semua supplier aktif.
+- [x] BR-P2a-10: Notif ke storefront `POST {VL_URL}/api/bridge/webhook/request-update`
+  — revisi `docs/openapi.yaml` + `VENDINGLINK_WEBHOOK_SPEC.md`.
+- [x] BR-P2a-11: Test coverage guardrail (Vitest + nock). **Wajib lulus sebelum deploy.**
 
 **Pekerjaan storefront P2a:**
 
-- [ ] ST-P2a-1: Tombol "Request Produk" di katalog.
-- [ ] ST-P2a-2: `POST /api/bridge/webhook/request-update` — terima notif bridge.
-- [ ] ST-P2a-3: Forward notif ke customer (WA/push).
-- [ ] ST-P2a-4: Tombol konfirmasi beli yang trigger `confirm` ke bridge.
+- [x] ST-P2a-1: Tombol "Request Produk ini" di product card yang kosong pada halaman katalog (`CustomerProductCard.tsx` + `RequestProductModal.tsx` + `POST /api/customer/product-requests`).
+- [x] ST-P2a-2: `POST /api/bridge/webhook/request-update` — terima notif bridge (`app/api/bridge/webhook/request-update/route.ts`).
+- [x] ST-P2a-3: Forward notif ke customer (WA/push) (`lib/whatsapp.ts`: `sendProductFoundNotification` & `sendProductStatusNotification`).
+- [x] ST-P2a-4: Tombol konfirmasi beli yang trigger `confirm` ke bridge (`POST /api/customer/product-requests/:id/confirm` & `/request-confirm/[id]`).
 
 **SLA:** fase 1 = "secepatnya". Fase 2 setelah 2 minggu stabil = umumkan "maks 3 menit".
 
@@ -451,11 +531,11 @@ daily cap > balance floor > price delta > high value threshold.
 
 ### [Bridge] P2b — Dynamic Supplier Management & Agentic Adapter Build
 
-**Kondisi sekarang (kemajuan terkini):**
-- `SupplierFactory.ts` telah mendukung multi-supplier modular: `RezekiShopAdapter` (RZK), `PrimeDigitalAdapter` (PDA), dan `DigitalAIStoreAdapter` (DAI).
-- Mekanisme pemeringkatan penawaran otonom `supplierFactory.findBestOffer()` telah aktif membandingkan stok & harga antar supplier.
-- Graceful degradation aktif bila API key supplier belum diset di `.env` (tidak memicu crash runtime).
-- Sisa gap: model dinamis `Supplier` di DB dan UI manajemen runtime di storefront.
+**Kondisi sekarang (gap):**
+- `SupplierFactory.ts:9` hardcode hanya `new RezekiShopAdapter()`.
+- Tambah supplier baru = tulis adapter TypeScript, daftarkan di factory, rebuild Docker, redeploy.
+- Env vars supplier hardcode di `src/config/env.ts:20-21`.
+- Tidak ada model Supplier di DB, tidak ada UI manajemen di storefront.
 
 **Kondisi target (to-be):**
 
@@ -533,7 +613,7 @@ enum SupplierStatus {
 
 **Rekomendasi arsitektur:** Telegraph sebagai pihak ketiga tanpa SLA dan tanpa kontrol SEO
 sebaiknya jadi opsi supplementary (publish dari CMS ke Telegraph), bukan sumber kebenaran.
-Bangun CMS minimal di storefront dengan MDX atau rich-text editor.
+Bangun CMS minimal di storefront dengan MDX atau rich-text editor yang mirip telegraph.
 
 **Pekerjaan storefront:**
 
@@ -588,13 +668,16 @@ Bangun CMS minimal di storefront dengan MDX atau rich-text editor.
 
 | ID   | Deskripsi                                                                     | Risiko    | Sprint target    |
 |------|-------------------------------------------------------------------------------|-----------|------------------|
-| TD-1 | Nol test file di `src/` meski Vitest + nock + supertest terpasang. `npm run test` tidak memverifikasi apa pun. | ✅ RESOLVED (2026-10-11): Vitest suite di `src/__tests__/` (21 tests lulus: client, adapter, express, swagger) | — |
-| TD-2 | `scripts/export_decrypted.ts` menulis kunci terdekripsi ke JSON plaintext tanpa flag eksplisit. File sudah ada di working tree. | ✅ RESOLVED (BR-8c): Output default terenkripsi AES-256; flag eksplisit `--plaintext` diwajibkan | — |
-| TD-3 | `README.md:52` contoh `KEYS_ENCRYPTION_KEY=1234567890=` bukan 32-byte valid, berisiko disalin apa adanya. | ✅ RESOLVED (BR-8g): Instruksi `openssl rand -base64 32` & peringatan placeholder diperbarui | — |
-| TD-4 | `db.ts:12` logging `query` aktif di production — noise log dan potensi ekspos query sensitif. Ganti ke `['error']` di production. | ✅ RESOLVED (2026-10-11): Logging diatur error-only di production, verbose di dev | — |
-| TD-5 | `ProductMapping` model di schema tapi 0 referensi di `src/` (dead model). `vlProductId = "[UNKNOWN]"` di orchestrator. | ✅ RESOLVED (BR-5a): Resolusi `vlProductId` aktif di `orchestrator.ts` & Telegram `/map` | — |
-| TD-6 | `orchestrator.ts:42-52` `executePurchase()` stub kosong + import menganggur. | ✅ RESOLVED (2026-10-11): Stub dan import menganggur dibersihkan | — |
+| TD-1 | Nol test file di `src/` meski Vitest + nock + supertest terpasang. `npm run test` tidak memverifikasi apa pun. | TINGGI — wajib selesai sebelum P2a deploy | P0/v1.1 |
+| TD-2 | `scripts/export_decrypted.ts` menulis kunci terdekripsi ke JSON plaintext tanpa flag eksplisit. File sudah ada di working tree. | TINGGI — data kunci di disk tanpa enkripsi | P0/v1.1 |
+| TD-3 | `README.md:52` contoh `KEYS_ENCRYPTION_KEY=1234567890=` bukan 32-byte valid, berisiko disalin apa adanya. | MEDIUM | P0/v1.1 (BR-8g) |
+| TD-4 | `db.ts:12` logging `query` aktif di production — noise log dan potensi ekspos query sensitif. Ganti ke `['error']` di production. | ✅ RESOLVED (db.ts production check) | P0/v1.1 |
+| TD-5 | `ProductMapping` model di schema tapi 0 referensi di `src/` (dead model). `vlProductId = "[UNKNOWN]"` di orchestrator. | MEDIUM | P0/v1.1 (BR-5a) |
+| TD-6 | `orchestrator.ts:42-52` `executePurchase()` stub kosong + import menganggur. | LOW | P2a (BR-P2a-1) |
 | TD-7 | Session middleware in-memory (`session.ts:20`). Restart bot = state AWAITING_EMAIL hilang. Cukup untuk admin tunggal, tapi dokumentasikan limitasinya di README. | LOW | Opsional |
+| TD-8 | `Transaction.promoCodeId` overloaded: ditulis baik oleh jalur "kode dipakai saat checkout" maupun jalur "kode diterbitkan sbg refund stockout" di `transactionStatus.ts`, saling menimpa. Memungkinkan reuse kode promo yang seharusnya sudah terpakai. | ✅ RESOLVED (ST-2a-2, 2026-10-11): kolom `Transaction.refundPromoCodeId` terpisah untuk kode refund terbit + backfill gelombang 2 | — |
+| TD-9 | `lib/discount.ts` dead code — nol caller di codebase (checkout query Prisma langsung). `__tests__/lib/discount.test.ts` memock seluruh modul yang diuji (`vi.mock('@/lib/discount')`), jadi 17 test-nya memvalidasi mock, bukan logika nyata. | ✅ RESOLVED (ST-2a-2, 2026-10-11): `lib/discount.ts` + 2 mock-only test dihapus; diganti test integrasi nyata `discount-validate.test.ts` | — |
+| TD-10 | `GET /api/customer/orders` dulu memakai `customerPhone: { contains: sanitizedPhone }` dan mengembalikan `redeemUrl` tanpa bukti pembelian. | ✅ RESOLVED (2026-10-11): GET hanya challenge 5 opsi setelah consent; POST meminta jawaban produk terakhir + order ID milik nomor yang sama, pembatasan 10/menit/IP; tidak ada lookup substring. Shared rate limiter untuk multi-instance masih follow-up. | P1 (ST-1b-3) |
 
 ---
 
@@ -607,7 +690,7 @@ jika tidak dijawab.
 |---|-------------------------------------------------------------------------|--------------|-----------------|
 | Q1 | Integrasi Google Drive yang "rusak" — kode tidak ditemukan di repo bridge. Di mana kode tersebut berada? (VPS script? Storefront?) Perlu diidentifikasi sebelum BR-8a bisa dirancang final. | P0 (BR-8a) | Admin/DevOps |
 | Q2 | Storefront VendingLink: framework apa, repo di mana? Semua task ST-* dalam roadmap ini perlu akses ke repo storefront untuk dieksekusi. | P0 (ST-5a) | Storefront maintainer |
-| Q3 | N hari window refund untuk ReferralReward ACCRUED -> PAYABLE? Ini keputusan bisnis, bukan teknis. | P1 (ST-2e) | Owner bisnis |
+| Q3 | ~~N hari window refund untuk ReferralReward ACCRUED -> PAYABLE?~~ **RESOLVED**: `accrualWindowDays` default 15 hari, hard ceiling 15, admin-editable via `ProgramConfig`. | P1 (ST-2e) | Owner bisnis |
 | Q4 | ~~AGENT_MAX_SPEND_PER_REQUEST dan _PER_DAY — berapa angka yang tepat?~~ **RESOLVED**: Menggunakan **Dynamic Guardrail via Hermes Agent** yang tersimpan di DB `AgentOperationalConfig` (default Rp 500rb/req, Rp 5jt/hari). Hermes menganalisis pola saldo/demand & mengirim rekomendasi approval interaktif ke Telegram Admin. Nilai di `env.ts` bertindak sebagai *Absolute Hard Boundary*. | P2a (BR-P2a-3) | Owner bisnis |
 | Q5 | ~~LLM mana yang akan digunakan untuk agentic adapter build?~~ **RESOLVED**: Menggunakan **API Komersial (Claude 3.5 Sonnet / GPT-4o)** via **Hermes Agent Runner di VPS/worker terpisah** (di luar Vercel/Bridge). Biaya sangat rendah (<$5/bln karena frekuensi rendah). Keamanan kredensial dijamin lewat **Data Redaction layer**. Output wajib berupa **GitHub Draft PR + Vitest PASS**, tanpa runtime hot-load. | P2b (BR-P2b-6) | Admin/Bisnis |
 | Q6 | Item 7 (Shopee) dan Item 6 (USDT) — gate legal belum dibuka. Tidak ada effort engineering sebelum gate terbuka. | P3 | Owner bisnis + legal |

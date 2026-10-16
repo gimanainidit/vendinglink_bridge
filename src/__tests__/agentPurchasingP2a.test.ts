@@ -33,14 +33,14 @@ describe('P2a Agentic Purchasing & Guardrail Tests', () => {
   const app = createApp();
   const validSecret = env.BRIDGE_SECRET_KEY;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
-    agentGuardrailService.setPaused(false);
+    await agentGuardrailService.setPaused(false);
   });
 
   describe('Agent Guardrail Evaluation', () => {
     it('rejects when emergency kill switch is paused via /agent pause', async () => {
-      agentGuardrailService.setPaused(true);
+      await agentGuardrailService.setPaused(true);
       const res = await agentGuardrailService.evaluateGuardrail({
         quotedPrice: 50000,
         supplierCode: 'RZK',

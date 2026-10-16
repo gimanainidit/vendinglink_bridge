@@ -1,9 +1,10 @@
-import { supplierOrderWorker } from './queues/workers/supplierOrder.worker';
+﻿import { supplierOrderWorker } from './queues/workers/supplierOrder.worker';
 import { vendingDeliveryWorker } from './queues/workers/vendingDelivery.worker';
 import { reconcileWorker } from './queues/workers/reconcile.worker';
 import { productSearchWorker } from './queues/workers/productSearch.worker';
 import { redisConnection } from './queues/connection';
 import { runSweeper } from './queues/sweeper';
+import { runBalanceMonitor } from './services/balanceMonitorService';
 import { logger } from './lib/logger';
 import { prisma } from './db';
 
@@ -14,9 +15,14 @@ const startWorker = async () => {
   await runSweeper();
   const sweeperInterval = setInterval(runSweeper, 10 * 60 * 1000);
 
+  // Start balance monitor check immediately, and then every 30 minutes (BR-P2a-7)
+  await runBalanceMonitor();
+  const balanceInterval = setInterval(runBalanceMonitor, 30 * 60 * 1000);
+
   const shutdown = async () => {
     logger.info('Shutting down workers...');
     clearInterval(sweeperInterval);
+    clearInterval(balanceInterval);
     
     await supplierOrderWorker.close();
     await vendingDeliveryWorker.close();
