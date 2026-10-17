@@ -7,6 +7,8 @@ import { Product } from './types';
 import { prisma } from '../db';
 import { decryptCredentials } from '../lib/crypto';
 import { logger } from '../lib/logger';
+import { retrieveCandidates } from './candidateRetriever';
+import { matchBestOffer } from '../services/hermesSemanticMatcher';
 
 class SupplierFactory {
   private adapters = new Map<string, ISupplierAdapter>();
@@ -134,27 +136,28 @@ class SupplierFactory {
     }));
   }
 
-  async findBestOffer(query: string): Promise<{ adapter: ISupplierAdapter; product: Product } | null> {
+  async findBestOffer(
+    query: string,
+    maxBudget?: number | null
+  ): Promise<{ adapter: ISupplierAdapter; product: Product; confidence?: number; reason?: string } | null> {
     const adapters = this.getAllAdapters();
-    const results = await Promise.allSettled(
-      adapters.map(async (adapter) => {
-        const products = await adapter.getProductList(query);
-        const inStock = products.filter((p) => p.availability === 'in_stock' && (p.stock === undefined || p.stock > 0));
-        return inStock.map((product) => ({ adapter, product }));
-      })
-    );
+    const candidatePool = await retrieveCandidates(adapters, query);
 
-    const candidates: { adapter: ISupplierAdapter; product: Product }[] = [];
-    for (const r of results) {
-      if (r.status === 'fulfilled') {
-        candidates.push(...r.value);
-      }
+    if (candidatePool.length === 0) {
+      return null;
     }
 
-    if (candidates.length === 0) return null;
+    const matchResult = await matchBestOffer(query, candidatePool, maxBudget);
+    if (!matchResult.matched || !matchResult.candidate) {
+      return null;
+    }
 
-    candidates.sort((a, b) => (a.product.price ?? Infinity) - (b.product.price ?? Infinity));
-    return candidates[0];
+    return {
+      adapter: matchResult.candidate.adapter,
+      product: matchResult.candidate.product,
+      confidence: matchResult.confidence,
+      reason: matchResult.reason,
+    };
   }
 }
 

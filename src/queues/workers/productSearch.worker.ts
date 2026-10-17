@@ -23,9 +23,11 @@ export const productSearchWorker = new Worker(
       return;
     }
 
+    logger.info({ requestId, jobId: job.id, query: req.query }, 'Processing product search request');
+
     try {
-      // 1. Query registered suppliers in parallel (RZK, PDA, DAI)
-      const bestOffer = await supplierFactory.findBestOffer(req.query);
+      // 1. Query registered suppliers in parallel via Hermes Agentic Semantic Search
+      const bestOffer = await supplierFactory.findBestOffer(req.query, req.maxBudget);
 
       if (!bestOffer) {
         await prisma.productRequest.update({
@@ -136,9 +138,19 @@ export const productSearchWorker = new Worker(
         quotedPrice,
       });
 
+      // Notify Telegram Admin of Hermes Semantic Match
+      const adminChatId = env.ADMIN_TELEGRAM_ID.split(',')[0].trim();
+      if (adminChatId) {
+        await bot.telegram.sendMessage(
+          adminChatId,
+          `🤖 *Hermes Match Found*:\nRequest: \`${req.id}\`\nQuery: "${req.query}"\nFound: *${bestOffer.product.name}* (\`${supplierCode}\`)\nPrice: Rp ${quotedPrice.toLocaleString('id-ID')}\nConfidence: ${bestOffer.confidence ?? 100}%\nReason: ${bestOffer.reason || 'Semantic match'}`,
+          { parse_mode: 'Markdown' }
+        ).catch((e) => logger.warn({ err: e.message }, 'Failed to send Telegram match notification'));
+      }
+
       logger.info(
-        { requestId: req.id, supplierCode, productId, quotedPrice },
-        'Product search completed successfully'
+        { requestId: req.id, supplierCode, productId, quotedPrice, confidence: bestOffer.confidence },
+        'Product search completed successfully via Hermes Semantic Matcher'
       );
     } catch (err: any) {
       logger.error({ requestId: req.id, error: err.message }, 'Error during product search worker');

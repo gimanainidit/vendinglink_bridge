@@ -40,6 +40,8 @@ const envSchema = z.object({
   // Hermes Agent Runner Integration (P2b / Localhost)
   HERMES_API_SECRET: z.string().default('hermes-local-secret-change-in-prod'),
   AGENT_ADAPTER_BUILD_ENABLED: z.coerce.boolean().default(true),
+  ANTHROPIC_API_KEY: z.string().optional(),
+  ANTHROPIC_BASE_URL: z.string().optional(),
 });
 
 // Normalize environment aliases for DAI

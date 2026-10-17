@@ -303,3 +303,41 @@ hermesRouter.patch('/build-jobs/:id', async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * POST /api/v1/hermes/evaluate-query
+ * Endpoint for Hermes Agent to test and verify semantic product matching.
+ */
+hermesRouter.post('/evaluate-query', async (req: Request, res: Response) => {
+  const { query, maxBudget } = req.body;
+  if (!query) {
+    res.status(400).json({ error: 'Query is required' });
+    return;
+  }
+
+  try {
+    const offer = await supplierFactory.findBestOffer(String(query), maxBudget ? Number(maxBudget) : undefined);
+    if (!offer) {
+      res.status(200).json({
+        matched: false,
+        message: 'No matching in-stock offer found within budget',
+      });
+      return;
+    }
+
+    res.status(200).json({
+      matched: true,
+      supplierCode: offer.adapter.code,
+      productId: offer.product.id,
+      productName: offer.product.name,
+      price: offer.product.price,
+      currency: offer.product.currency,
+      confidence: offer.confidence,
+      reason: offer.reason,
+    });
+  } catch (err: any) {
+    logger.error({ err }, 'Error evaluating Hermes query');
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
