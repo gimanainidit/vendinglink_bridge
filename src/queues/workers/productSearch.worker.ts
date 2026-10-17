@@ -138,13 +138,35 @@ export const productSearchWorker = new Worker(
         quotedPrice,
       });
 
-      // Notify Telegram Admin of Hermes Semantic Match
+      // Notify Telegram Admin of Hermes Semantic Match with Approve/Reject Mapping buttons
       const adminChatId = env.ADMIN_TELEGRAM_ID.split(',')[0].trim();
       if (adminChatId) {
+        const keyboard = {
+          inline_keyboard: [
+            [
+              { text: '✅ Setujui Mapping', callback_data: `map_app_${req.id}` },
+              { text: '❌ Tolak', callback_data: `map_rej_${req.id}` },
+            ],
+          ],
+        };
+
+        const vlInfo = req.vlProductId ? `\n• <b>ID Storefront:</b> <code>${req.vlProductId}</code>` : '';
+
         await bot.telegram.sendMessage(
           adminChatId,
-          `🤖 *Hermes Match Found*:\nRequest: \`${req.id}\`\nQuery: "${req.query}"\nFound: *${bestOffer.product.name}* (\`${supplierCode}\`)\nPrice: Rp ${quotedPrice.toLocaleString('id-ID')}\nConfidence: ${bestOffer.confidence ?? 100}%\nReason: ${bestOffer.reason || 'Semantic match'}`,
-          { parse_mode: 'Markdown' }
+          `🤖 <b>Hermes Match Found!</b>\n\n` +
+          `• <b>Permintaan:</b> <i>${req.query}</i>\n` +
+          `• <b>Ditemukan di:</b> <code>${supplierCode}</code> (${bestOffer.product.name})\n` +
+          `• <b>Supplier SKU:</b> <code>${productId}</code>\n` +
+          `• <b>Harga:</b> Rp ${quotedPrice.toLocaleString('id-ID')}\n` +
+          `• <b>Confidence:</b> ${bestOffer.confidence ?? 100}%\n` +
+          `• <b>Reason:</b> <i>${bestOffer.reason || 'Semantic match'}</i>` +
+          vlInfo + `\n\n` +
+          `💡 <i>Apakah Anda ingin memetakan produk ini ke etalase VendingLink?</i>`,
+          {
+            parse_mode: 'HTML',
+            reply_markup: keyboard,
+          }
         ).catch((e) => logger.warn({ err: e.message }, 'Failed to send Telegram match notification'));
       }
 

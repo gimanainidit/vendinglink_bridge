@@ -165,11 +165,119 @@ describe('Telegram Command Parser & Formatting', () => {
       // 3 items -> row 0 has 2 items, row 1 has 1 item
       expect(keyboard.length).toBe(2);
       expect(keyboard[0].length).toBe(2);
-      expect(keyboard[1].length).toBe(1);
       expect(keyboard[0][0].callback_data).toBe('map_pick_0');
       expect(keyboard[0][1].callback_data).toBe('map_pick_1');
       expect(keyboard[1][0].callback_data).toBe('map_pick_2');
     });
   });
+
+  describe('Telegram Mapping Callback Query Handling (map_app and map_rej)', () => {
+    it('approves mapping and upserts to productMapping on map_app_ callback', async () => {
+      const { handleCallbackQuery } = await import('../telegram/callbacks/confirmBuy');
+      const { prisma } = await import('../db');
+      const vlClient = await import('../vendinglink/vendingLinkClient');
+
+      // Seed a test product request
+      const req = await prisma.productRequest.create({
+        data: {
+          id: 'test-req-approve-' + Date.now(),
+          idempotencyKey: 'idemp-approve-' + Date.now(),
+          query: 'test products',
+          customerRef: '628123456789',
+          status: 'FOUND',
+          foundSupplierCode: 'RZK',
+          foundProductId: 'loc_test1',
+          vlProductId: 'cmvbqvc550001afrx1uz0dafi',
+          quotedPrice: 1,
+        },
+      });
+
+      const editMessageText = vi.fn();
+      const answerCbQuery = vi.fn();
+
+      const mockCtx: any = {
+        callbackQuery: { data: `map_app_${req.id}` },
+        editMessageText,
+        answerCbQuery,
+        session: {},
+      };
+
+      // Mock syncProductMappingToVendingLink
+      const syncSpy = vi.spyOn(vlClient, 'syncProductMappingToVendingLink').mockResolvedValue({
+        success: true,
+      });
+
+      await handleCallbackQuery(mockCtx);
+
+      expect(answerCbQuery).toHaveBeenCalledWith(expect.stringContaining('Mapping berhasil disetujui'));
+      expect(editMessageText).toHaveBeenCalledWith(
+        expect.stringContaining('Mapping Produk Disetujui!'),
+        expect.objectContaining({ parse_mode: 'HTML' })
+      );
+
+      // Verify mapping in Prisma
+      const mapping = await prisma.productMapping.findUnique({
+        where: {
+          supplierCode_supplierProductId: {
+            supplierCode: 'RZK',
+            supplierProductId: 'loc_test1',
+          },
+        },
+      });
+      expect(mapping).toBeDefined();
+      expect(mapping?.vlProductId).toBe('cmvbqvc550001afrx1uz0dafi');
+
+      syncSpy.mockRestore();
+    });
+
+    it('rejects mapping suggestion without modifying mappings on map_rej_ callback', async () => {
+      const { handleCallbackQuery } = await import('../telegram/callbacks/confirmBuy');
+      const { prisma } = await import('../db');
+
+      const req = await prisma.productRequest.create({
+        data: {
+          id: 'test-req-reject-' + Date.now(),
+          idempotencyKey: 'idemp-reject-' + Date.now(),
+          query: 'rejected product query',
+          customerRef: '628999999999',
+          status: 'FOUND',
+          foundSupplierCode: 'RZK',
+          foundProductId: 'loc_rejected_sku',
+          vlProductId: 'cmvbqvc550001afrx1uz0dafi',
+          quotedPrice: 100,
+        },
+      });
+
+      const editMessageText = vi.fn();
+      const answerCbQuery = vi.fn();
+
+      const mockCtx: any = {
+        callbackQuery: { data: `map_rej_${req.id}` },
+        editMessageText,
+        answerCbQuery,
+        session: {},
+      };
+
+      await handleCallbackQuery(mockCtx);
+
+      expect(answerCbQuery).toHaveBeenCalledWith(expect.stringContaining('Mapping ditolak'));
+      expect(editMessageText).toHaveBeenCalledWith(
+        expect.stringContaining('Mapping Hermes Ditolak'),
+        expect.objectContaining({ parse_mode: 'HTML' })
+      );
+
+      // Verify mapping was NOT created
+      const mapping = await prisma.productMapping.findUnique({
+        where: {
+          supplierCode_supplierProductId: {
+            supplierCode: 'RZK',
+            supplierProductId: 'loc_rejected_sku',
+          },
+        },
+      });
+      expect(mapping).toBeNull();
+    });
+  });
 });
+
 

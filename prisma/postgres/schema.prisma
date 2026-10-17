@@ -100,6 +100,7 @@ model ProductRequest {
   customerRef       String               // opaque ID storefront, BUKAN PII
   idempotencyKey    String               @unique
   query             String
+  vlProductId       String?
   categorySlug      String?
   maxBudget         Float?
   status            ProductRequestStatus @default(SEARCHING)

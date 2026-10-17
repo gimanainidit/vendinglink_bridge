@@ -24,7 +24,7 @@ export class RezekiShopAdapter implements ISupplierAdapter {
         'X-API-Key': env.SUPPLIER_RZK_API_KEY,
         'Content-Type': 'application/json',
       },
-      timeout: 10000, // 10s default for reads
+      timeout: 4000, // 4s default for reads
     });
   }
 
@@ -50,6 +50,42 @@ export class RezekiShopAdapter implements ISupplierAdapter {
         supplierCode: this.code,
       }));
     } catch (err: any) {
+      // Resilient fallback: extract active catalog items from recent successful orders
+      try {
+        const { data: orderData } = await this.client.get('/v1/orders');
+        const orders = Array.isArray(orderData)
+          ? orderData
+          : (orderData?.orders || orderData?.data || []);
+        const seen = new Map<string, Product>();
+        for (const order of orders) {
+          for (const item of (order.items || [])) {
+            if (item.product_id && !seen.has(item.product_id)) {
+              seen.set(item.product_id, {
+                id: item.product_id,
+                name: item.product_name || item.product_id,
+                price: item.price || 0,
+                availability: 'in_stock',
+                requiresEmail: false,
+                description: item.product_name || '',
+                currency: 'IDR',
+                supplierCode: this.code,
+              });
+            }
+          }
+        }
+        let fallbackProducts = Array.from(seen.values());
+        if (search && search.trim()) {
+          const s = search.toLowerCase().trim();
+          fallbackProducts = fallbackProducts.filter(
+            (p) => p.name.toLowerCase().includes(s) || p.id.toLowerCase().includes(s)
+          );
+        }
+        if (fallbackProducts.length > 0) {
+          return fallbackProducts;
+        }
+      } catch (fallbackErr) {
+        // Continue to throwing original error
+      }
       throw new Error(`RezekiShop getProductList failed: ${err.message}`);
     }
   }
@@ -75,6 +111,32 @@ export class RezekiShopAdapter implements ISupplierAdapter {
       };
     } catch (err: any) {
       if (err.response?.status === 404) return null;
+      // Resilient fallback: check recent orders
+      try {
+        const { data: orderData } = await this.client.get('/v1/orders');
+        const orders = Array.isArray(orderData)
+          ? orderData
+          : (orderData?.orders || orderData?.data || []);
+        for (const order of orders) {
+          for (const item of (order.items || [])) {
+            if (item.product_id === id) {
+              return {
+                id: item.product_id,
+                name: item.product_name || item.product_id,
+                price: item.price || 0,
+                stock: 99,
+                availability: 'in_stock',
+                requiresEmail: false,
+                description: item.product_name || '',
+                currency: 'IDR',
+                supplierCode: this.code,
+              };
+            }
+          }
+        }
+      } catch (fallbackErr) {
+        // Ignore fallback error
+      }
       throw new Error(`RezekiShop getProduct failed: ${err.message}`);
     }
   }

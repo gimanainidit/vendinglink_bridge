@@ -151,3 +151,40 @@ export const fetchVendingLinkProducts = async (
   return lastResult;
 };
 
+export interface SyncMappingResult {
+  success: boolean;
+  error?: string;
+  mapping?: any;
+}
+
+export const syncProductMappingToVendingLink = async (
+  supplierCode: string,
+  supplierProductId: string,
+  vlProductId: string
+): Promise<SyncMappingResult> => {
+  const url = `${env.VENDINGLINK_URL}/api/bridge/mappings`;
+  try {
+    const { data } = await axios.post(
+      url,
+      {
+        supplierCode,
+        supplierProductId,
+        productId: vlProductId,
+      },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${env.BRIDGE_SECRET_KEY}`,
+        },
+        timeout: 8000,
+      }
+    );
+    logger.info({ supplierCode, supplierProductId, vlProductId }, 'Synced mapping to VendingLink Storefront');
+    return { success: true, mapping: data?.mapping };
+  } catch (err: any) {
+    const errMsg = err.response?.data?.error || err.message;
+    logger.error({ supplierCode, supplierProductId, vlProductId, error: errMsg }, 'Failed to sync mapping to VendingLink');
+    return { success: false, error: errMsg };
+  }
+};
+

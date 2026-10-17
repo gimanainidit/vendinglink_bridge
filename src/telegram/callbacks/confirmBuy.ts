@@ -4,13 +4,102 @@ import { createPendingTransaction, resolveVlProductId } from '../../services/orc
 import { prisma } from '../../db';
 import { supplierOrderQueue } from '../../queues/queues';
 import { buildProductGridKeyboard, escapeHtml } from '../router';
-import { fetchVendingLinkProducts } from '../../vendinglink/vendingLinkClient';
+import { fetchVendingLinkProducts, syncProductMappingToVendingLink } from '../../vendinglink/vendingLinkClient';
 
 export const handleCallbackQuery = async (ctx: MyContext) => {
   if (!ctx.callbackQuery || !('data' in ctx.callbackQuery)) return;
   const data = ctx.callbackQuery.data;
 
   try {
+    if (data.startsWith('map_app_')) {
+      const reqId = data.replace('map_app_', '');
+      const req = await prisma.productRequest.findUnique({
+        where: { id: reqId },
+      });
+
+      if (!req) {
+        await ctx.answerCbQuery('❌ Permintaan tidak ditemukan.');
+        return;
+      }
+
+      if (!req.foundSupplierCode || !req.foundProductId) {
+        await ctx.answerCbQuery('❌ Data produk supplier belum lengkap.');
+        return;
+      }
+
+      if (!req.vlProductId) {
+        await ctx.answerCbQuery('ℹ️ Tidak ada Storefront Product ID.');
+        await ctx.editMessageText(
+          `ℹ️ <b>Storefront Product ID Tidak Ditemukan</b>\n\n` +
+          `Permintaan <code>${escapeHtml(req.id)}</code> tidak memiliki ID Produk Storefront langsung.\n` +
+          `Silakan petakan manual dengan perintah:\n` +
+          `<code>/map ${escapeHtml(req.foundSupplierCode)} ${escapeHtml(req.foundProductId)} &lt;VL_PRODUCT_ID&gt;</code>`,
+          { parse_mode: 'HTML' }
+        );
+        return;
+      }
+
+      // Upsert in Bridge SQLite
+      await prisma.productMapping.upsert({
+        where: {
+          supplierCode_supplierProductId: {
+            supplierCode: req.foundSupplierCode,
+            supplierProductId: req.foundProductId,
+          },
+        },
+        update: {
+          vlProductId: req.vlProductId,
+          displayName: req.query,
+        },
+        create: {
+          supplierCode: req.foundSupplierCode,
+          supplierProductId: req.foundProductId,
+          vlProductId: req.vlProductId,
+          displayName: req.query,
+        },
+      });
+
+      // Sync to VendingLink Storefront
+      const syncResult = await syncProductMappingToVendingLink(
+        req.foundSupplierCode,
+        req.foundProductId,
+        req.vlProductId
+      );
+
+      await ctx.answerCbQuery('✅ Mapping berhasil disetujui & disimpan!');
+
+      const syncNote = syncResult.success
+        ? '🔗 <i>Tersinkronisasi ke VendingLink Storefront & Bridge SQLite.</i>'
+        : `⚠️ <i>Tersimpan di Bridge, namun sinkronisasi Storefront gagal: ${escapeHtml(syncResult.error || '')}</i>`;
+
+      await ctx.editMessageText(
+        `✅ <b>Mapping Produk Disetujui!</b>\n\n` +
+        `• <b>Permintaan:</b> <i>${escapeHtml(req.query)}</i>\n` +
+        `• <b>Supplier:</b> <code>${escapeHtml(req.foundSupplierCode)}</code> (<code>${escapeHtml(req.foundProductId)}</code>)\n` +
+        `• <b>VendingLink Product ID:</b> <code>${escapeHtml(req.vlProductId)}</code>\n` +
+        `• <b>Status:</b> <b>MAPPED</b>\n\n` +
+        syncNote,
+        { parse_mode: 'HTML' }
+      );
+      return;
+    }
+
+    if (data.startsWith('map_rej_')) {
+      const reqId = data.replace('map_rej_', '');
+      const req = await prisma.productRequest.findUnique({
+        where: { id: reqId },
+      });
+
+      await ctx.answerCbQuery('Mapping ditolak.');
+      await ctx.editMessageText(
+        `❌ <b>Mapping Hermes Ditolak</b>\n\n` +
+        `• <b>Permintaan:</b> <i>${escapeHtml(req?.query || reqId)}</i>\n` +
+        `• <b>Status:</b> Saran pemetaan ditolak oleh admin. Tidak ada perubahan mapping dibuat.`,
+        { parse_mode: 'HTML' }
+      );
+      return;
+    }
+
     if (data === 'buy_cancel') {
       await ctx.editMessageText('❌ Purchase cancelled.');
       return;

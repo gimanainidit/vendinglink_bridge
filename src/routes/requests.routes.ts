@@ -28,6 +28,7 @@ requestsRouter.use(authenticateBridgeSecret);
 const createProductRequestSchema = z.object({
   customerRef: z.string().min(1, 'customerRef is required'),
   query: z.string().min(1, 'query is required'),
+  vlProductId: z.string().optional(),
   categorySlug: z.string().optional(),
   maxBudget: z.coerce.number().positive().optional(),
 });
@@ -71,6 +72,7 @@ requestsRouter.post('/', async (req: Request, res: Response) => {
         idempotencyKey,
         customerRef: parsed.data.customerRef,
         query: parsed.data.query,
+        vlProductId: parsed.data.vlProductId,
         categorySlug: parsed.data.categorySlug,
         maxBudget: parsed.data.maxBudget,
         status: 'SEARCHING',
