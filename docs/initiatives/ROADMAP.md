@@ -67,7 +67,7 @@ Setiap perubahan kontrak wajib direvisi di kedua dokumen sebelum implementasi.
 | v1.0  | Foundation                                | CLOSED · VERIFIED           | Selesai       |
 | v1.1  | Ketahanan Data & Fondasi Katalog (P0)     | CLOSED · VERIFIED           | Sprint 1      |
 | v1.2  | Program Promo & Loyalitas (P1)            | CLOSED · VERIFIED           | Sprint 2      |
-| v2.0  | Agentic Purchasing & Supplier Dinamis (P2)| IN PROGRESS (P2a VERIFIED)  | Sprint 3 (P2a)|
+| v2.0  | Agentic Purchasing & Supplier Dinamis (P2)| CLOSED · VERIFIED           | Sprint 3 (P2a/b)|
 | v3.x  | Long-Term / P3                            | OPTIONAL · GATED            | TBD           |
 
 ---
@@ -590,7 +590,7 @@ enum SupplierStatus {
 - [x] BR-P2b-3: Update `SupplierFactory` — load dari tabel `Supplier` (DB), RZK hardcode sebagai fallback.
 - [x] BR-P2b-4: `POST /api/v1/suppliers` + `PATCH /api/v1/suppliers/:code` dengan Bearer auth.
 - [x] BR-P2b-5: Validation worker — dry-run saat supplier baru didaftarkan.
-- [ ] BR-P2b-6: Hermes Agent adapter builder pipeline (feature-flagged `AGENT_ADAPTER_BUILD_ENABLED`) — sanitizer layer, sandbox Vitest runner, GitHub API Draft PR creator, notif link PR ke Telegram.
+- [x] BR-P2b-6: Hermes Agent adapter builder pipeline (feature-flagged `AGENT_ADAPTER_BUILD_ENABLED`) — sanitizer layer, sandbox Vitest runner, GitHub API Draft PR creator, notif link PR ke Telegram.
 - [x] BR-P2b-7: Command `/suppliers` — list semua supplier dan statusnya.
 - [x] BR-P2b-8: `SUPPLIER_RZK_*` di `env.ts` jadi deprecated (baca tapi tidak required, backward-compat).
 

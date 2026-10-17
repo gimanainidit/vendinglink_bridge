@@ -1,4 +1,4 @@
-﻿import { z } from 'zod';
+import { z } from 'zod';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -39,6 +39,7 @@ const envSchema = z.object({
   AGENT_HIGH_VALUE_THRESHOLD: z.coerce.number().default(1000000),
   // Hermes Agent Runner Integration (P2b / Localhost)
   HERMES_API_SECRET: z.string().default('hermes-local-secret-change-in-prod'),
+  AGENT_ADAPTER_BUILD_ENABLED: z.coerce.boolean().default(true),
 });
 
 // Normalize environment aliases for DAI

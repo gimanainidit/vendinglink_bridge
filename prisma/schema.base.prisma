@@ -147,3 +147,24 @@ model AgentOperationalConfig {
   approvedAt         DateTime?
   updatedAt          DateTime  @updatedAt
 }
+
+enum AdapterBuildJobStatus {
+  QUEUED
+  PROCESSING
+  PR_CREATED
+  FAILED
+}
+
+model AdapterBuildJob {
+  id              String                @id @default(cuid())
+  supplierCode    String
+  status          AdapterBuildJobStatus @default(QUEUED)
+  sanitizedSpec   String
+  prUrl           String?
+  branchName      String?
+  error           String?
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+
+  @@index([status, createdAt])
+}

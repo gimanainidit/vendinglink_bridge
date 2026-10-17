@@ -5,6 +5,7 @@ import { prisma } from '../db';
 import { encryptCredentials } from '../lib/crypto';
 import { supplierFactory } from '../suppliers/SupplierFactory';
 import { supplierValidationService } from '../services/supplierValidationService';
+import { adapterBuildService } from '../services/adapterBuildService';
 import { logger } from '../lib/logger';
 
 export const suppliersRouter = Router();
@@ -273,3 +274,27 @@ suppliersRouter.post('/:code/validate', async (req: Request, res: Response) => {
     res.status(500).json({ error: `Validation request failed: ${err.message}` });
   }
 });
+
+/**
+ * POST /api/v1/suppliers/:code/build-adapter
+ * Queue an autonomous adapter builder job for Hermes Agent runner (BR-P2b-6).
+ */
+suppliersRouter.post('/:code/build-adapter', async (req: Request, res: Response) => {
+  const code = String(req.params.code).toUpperCase();
+  try {
+    const result = await adapterBuildService.createBuildJob(code);
+    if (!result.queued) {
+      return res.status(400).json({ error: result.reason || 'Could not queue build job' });
+    }
+
+    res.status(202).json({
+      success: true,
+      message: `Adapter build job for ${code} enqueued for Hermes`,
+      job: result.job,
+    });
+  } catch (err: any) {
+    logger.error({ err, code }, 'Error triggering adapter build job');
+    res.status(500).json({ error: `Failed to queue build job: ${err.message}` });
+  }
+});
+

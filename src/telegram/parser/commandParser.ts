@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { env } from '../../config/env';
 
-export type CommandType = 'list' | 'buy' | 'status' | 'pending' | 'balance' | 'retry' | 'map' | 'agent' | 'suppliers' | 'help';
+export type CommandType = 'list' | 'buy' | 'status' | 'pending' | 'balance' | 'retry' | 'map' | 'agent' | 'suppliers' | 'build' | 'help';
 
 export interface ParsedCommand {
   type: CommandType;
@@ -155,6 +155,12 @@ export const parseCommand = (text: string): { command?: ParsedCommand; error?: s
         return { error: 'Usage: /agent [pause|resume|status]' };
       }
       return { command: { type: 'agent', search: action } };
+    }
+
+    case '/build': {
+      if (parts.length < 2) return { error: 'Usage: /build <SUPPLIER_CODE>' };
+      const supplierCode = parts[1].toUpperCase();
+      return { command: { type: 'build', supplierCode } };
     }
 
     default:

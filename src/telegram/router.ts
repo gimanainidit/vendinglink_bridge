@@ -6,6 +6,7 @@ import { supplierFactory } from '../suppliers/SupplierFactory';
 import { env } from '../config/env';
 import { prisma } from '../db';
 import { agentGuardrailService } from '../services/agentGuardrailService';
+import { adapterBuildService } from '../services/adapterBuildService';
 import { fetchVendingLinkProducts } from '../vendinglink/vendingLinkClient';
 
 export const escapeHtml = (str: string): string =>
@@ -684,6 +685,24 @@ export const handleTextMessage = async (ctx: MyContext) => {
       case 'map':
         await mapController(ctx, command);
         break;
+      case 'build': {
+        const code = (command.supplierCode || '').toUpperCase();
+        try {
+          const res = await adapterBuildService.createBuildJob(code);
+          if (!res.queued) {
+            await ctx.reply(`❌ <b>Gagal membuat build job</b>: ${escapeHtml(res.reason || 'Unknown error')}`, { parse_mode: 'HTML' });
+          } else {
+            await ctx.reply(
+              `🤖 <b>Adapter Build Queued</b> untuk <code>${code}</code> (Job ID: <code>${res.job.id}</code>).\n` +
+              `Hermes Agent Runner di VPS akan memproses spec dan membuka <b>GitHub Draft PR</b>.`,
+              { parse_mode: 'HTML' }
+            );
+          }
+        } catch (err: any) {
+          await ctx.reply(`❌ <b>Error</b>: ${escapeHtml(err.message)}`, { parse_mode: 'HTML' });
+        }
+        break;
+      }
       case 'help':
         await ctx.reply(
           '🤖 <b>VendingLink Bridge</b>\n\n' +
@@ -692,6 +711,7 @@ export const handleTextMessage = async (ctx: MyContext) => {
           '• <code>/buy &lt;SUPPLIER&gt; &lt;PRODUCT_ID&gt; [QTY] [emails]</code> - Buy products\n' +
           '• <code>/balance [SUPPLIER|ALL]</code> - Check balances across suppliers\n' +
           '• <code>/suppliers</code> - List dynamic and built-in suppliers\n' +
+          '• <code>/build &lt;SUPPLIER&gt;</code> - Trigger Hermes Agentic Adapter Builder PR\n' +
           '• <code>/agent [pause|resume|status]</code> - Control autonomous procurement kill switch\n' +
           '• <code>/status &lt;TX_ID&gt;</code> - Check tx status\n' +
           '• <code>/pending</code> - List pending tx\n' +

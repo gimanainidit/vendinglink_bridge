@@ -2,6 +2,7 @@ import { prisma } from '../db';
 import { decryptCredentials } from '../lib/crypto';
 import { GenericRestAdapter, GenericSupplierDescriptor } from '../suppliers/adapters/GenericRestAdapter';
 import { supplierFactory } from '../suppliers/SupplierFactory';
+import { adapterBuildService } from './adapterBuildService';
 import { logger } from '../lib/logger';
 
 export interface SupplierValidationResult {
@@ -103,6 +104,11 @@ export class SupplierValidationService {
         });
         supplierFactory.unregister(upperCode);
         logger.warn({ code: upperCode, err: result.error }, 'Supplier validation failed and marked NEEDS_REVIEW');
+
+        // Automatically trigger Hermes Agent adapter builder pipeline (BR-P2b-6)
+        adapterBuildService.createBuildJob(upperCode).catch((e: any) => {
+          logger.warn({ err: e.message, code: upperCode }, 'Failed to auto-enqueue Hermes adapter build job');
+        });
       }
 
       return result;
