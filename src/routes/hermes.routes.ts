@@ -17,7 +17,10 @@ export const hermesAuthMiddleware = (req: Request, res: Response, next: NextFunc
   }
 
   const token = authHeader.split(' ')[1];
-  const isValid = token === env.HERMES_API_SECRET || token === env.BRIDGE_SECRET_KEY;
+  const cleanToken = token ? token.replace(/^["']|["']$/g, '').trim() : '';
+  const cleanHermesSecret = env.HERMES_API_SECRET?.replace(/^["']|["']$/g, '').trim();
+  const cleanBridgeSecret = env.BRIDGE_SECRET_KEY?.replace(/^["']|["']$/g, '').trim();
+  const isValid = Boolean(cleanToken) && (cleanToken === cleanHermesSecret || cleanToken === cleanBridgeSecret);
 
   if (!isValid) {
     logger.warn({ ip: req.ip }, 'Invalid Hermes API secret attempt');
