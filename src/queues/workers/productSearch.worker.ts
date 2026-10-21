@@ -103,14 +103,20 @@ export const productSearchWorker = new Worker(
           rejectionReason: guardrailResult.reason,
         });
 
-        // Alert Admin on Telegram
-        const adminChatId = env.ADMIN_TELEGRAM_ID.split(',')[0].trim();
-        if (adminChatId) {
-          await bot.telegram.sendMessage(
-            adminChatId,
-            `⚠️ *Agent Guardrail Triggered*:\nRequest: \`${req.id}\`\nQuery: ${req.query}\nSupplier: ${supplierCode}\nPrice: ${quotedPrice}\nReason: ${guardrailResult.reason}`,
-            { parse_mode: 'Markdown' }
-          );
+        // Alert Admin on Telegram (broadcast to all admins in ADMIN_TELEGRAM_ID)
+        const adminIds = env.ADMIN_TELEGRAM_ID
+          ? env.ADMIN_TELEGRAM_ID.split(',').map((id) => id.trim()).filter(Boolean)
+          : [];
+        for (const adminId of adminIds) {
+          await bot.telegram
+            .sendMessage(
+              adminId,
+              `⚠️ *Agent Guardrail Triggered*:\nRequest: \`${req.id}\`\nQuery: ${req.query}\nSupplier: ${supplierCode}\nPrice: ${quotedPrice}\nReason: ${guardrailResult.reason}`,
+              { parse_mode: 'Markdown' }
+            )
+            .catch((e) =>
+              logger.warn({ err: e.message, adminId }, 'Failed to send Telegram guardrail alert')
+            );
         }
         return;
       }
@@ -138,9 +144,11 @@ export const productSearchWorker = new Worker(
         quotedPrice,
       });
 
-      // Notify Telegram Admin of Hermes Semantic Match with Approve/Reject Mapping buttons
-      const adminChatId = env.ADMIN_TELEGRAM_ID.split(',')[0].trim();
-      if (adminChatId) {
+      // Notify Telegram Admins of Hermes Semantic Match with Approve/Reject Mapping buttons
+      const adminIds = env.ADMIN_TELEGRAM_ID
+        ? env.ADMIN_TELEGRAM_ID.split(',').map((id) => id.trim()).filter(Boolean)
+        : [];
+      if (adminIds.length > 0) {
         const keyboard = {
           inline_keyboard: [
             [
@@ -152,22 +160,28 @@ export const productSearchWorker = new Worker(
 
         const vlInfo = req.vlProductId ? `\n• <b>ID Storefront:</b> <code>${req.vlProductId}</code>` : '';
 
-        await bot.telegram.sendMessage(
-          adminChatId,
-          `🤖 <b>Hermes Match Found!</b>\n\n` +
-          `• <b>Permintaan:</b> <i>${req.query}</i>\n` +
-          `• <b>Ditemukan di:</b> <code>${supplierCode}</code> (${bestOffer.product.name})\n` +
-          `• <b>Supplier SKU:</b> <code>${productId}</code>\n` +
-          `• <b>Harga:</b> Rp ${quotedPrice.toLocaleString('id-ID')}\n` +
-          `• <b>Confidence:</b> ${bestOffer.confidence ?? 100}%\n` +
-          `• <b>Reason:</b> <i>${bestOffer.reason || 'Semantic match'}</i>` +
-          vlInfo + `\n\n` +
-          `💡 <i>Apakah Anda ingin memetakan produk ini ke etalase VendingLink?</i>`,
-          {
-            parse_mode: 'HTML',
-            reply_markup: keyboard,
-          }
-        ).catch((e) => logger.warn({ err: e.message }, 'Failed to send Telegram match notification'));
+        for (const adminId of adminIds) {
+          await bot.telegram
+            .sendMessage(
+              adminId,
+              `🤖 <b>Hermes Match Found!</b>\n\n` +
+              `• <b>Permintaan:</b> <i>${req.query}</i>\n` +
+              `• <b>Ditemukan di:</b> <code>${supplierCode}</code> (${bestOffer.product.name})\n` +
+              `• <b>Supplier SKU:</b> <code>${productId}</code>\n` +
+              `• <b>Harga:</b> Rp ${quotedPrice.toLocaleString('id-ID')}\n` +
+              `• <b>Confidence:</b> ${bestOffer.confidence ?? 100}%\n` +
+              `• <b>Reason:</b> <i>${bestOffer.reason || 'Semantic match'}</i>` +
+              vlInfo + `\n\n` +
+              `💡 <i>Apakah Anda ingin memetakan produk ini ke etalase VendingLink?</i>`,
+              {
+                parse_mode: 'HTML',
+                reply_markup: keyboard,
+              }
+            )
+            .catch((e) =>
+              logger.warn({ err: e.message, adminId }, 'Failed to send Telegram match notification')
+            );
+        }
       }
 
       logger.info(
