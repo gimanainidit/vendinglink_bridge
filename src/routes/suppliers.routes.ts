@@ -84,16 +84,34 @@ function sanitizeSupplier(sup: any) {
 suppliersRouter.get('/', async (req: Request, res: Response) => {
   try {
     const dbSuppliers = await prisma.supplier.findMany({
+      where: {
+        authType: { not: 'BUILTIN' },
+      },
       orderBy: { createdAt: 'desc' },
     });
 
     const sanitized = dbSuppliers.map(sanitizeSupplier);
 
-    // Also include built-in adapters summary
+    // Also include built-in adapters summary with live status
     const builtIns = [
-      { code: 'RZK', displayName: 'Rezeki Shop', isBuiltIn: true },
-      { code: 'PDA', displayName: 'Prime Digital', isBuiltIn: true },
-      { code: 'DAI', displayName: 'Digital AI Store', isBuiltIn: true },
+      {
+        code: 'RZK',
+        displayName: 'Rezeki Shop',
+        isBuiltIn: true,
+        status: supplierFactory.getBuiltInStatus('RZK'),
+      },
+      {
+        code: 'PDA',
+        displayName: 'Prime Digital',
+        isBuiltIn: true,
+        status: supplierFactory.getBuiltInStatus('PDA'),
+      },
+      {
+        code: 'DAI',
+        displayName: 'Digital AI Store',
+        isBuiltIn: true,
+        status: supplierFactory.getBuiltInStatus('DAI'),
+      },
     ];
 
     res.status(200).json({
@@ -113,6 +131,33 @@ suppliersRouter.get('/', async (req: Request, res: Response) => {
 suppliersRouter.get('/:code', async (req: Request, res: Response) => {
   const code = String(req.params.code).toUpperCase();
   try {
+    if (supplierFactory.isBuiltIn(code)) {
+      const BUILTIN_NAMES: Record<string, string> = {
+        RZK: 'Rezeki Shop',
+        PDA: 'Prime Digital',
+        DAI: 'Digital AI Store',
+      };
+      const status = supplierFactory.getBuiltInStatus(code);
+      let currentBalance: number | null = null;
+      if (status === 'ACTIVE' && supplierFactory.hasAdapter(code)) {
+        try {
+          const adapter = supplierFactory.getAdapter(code);
+          currentBalance = await adapter.getBalance();
+        } catch {
+          // Leave as null if transient balance call fails
+        }
+      }
+      return res.status(200).json({
+        supplier: {
+          code,
+          displayName: BUILTIN_NAMES[code] || code,
+          status,
+          isBuiltIn: true,
+        },
+        currentBalance,
+      });
+    }
+
     const sup = await prisma.supplier.findUnique({
       where: { code },
     });
@@ -219,9 +264,47 @@ suppliersRouter.patch('/:code', async (req: Request, res: Response) => {
     });
   }
 
-  const updateData: any = {};
   const { displayName, baseUrl, authType, credentials, descriptor, status } = parseResult.data;
 
+  // Handle built-in adapter status toggle
+  if (supplierFactory.isBuiltIn(code)) {
+    if (!status) {
+      return res.status(400).json({ error: 'Field status diperlukan untuk adapter built-in' });
+    }
+    const normalizedStatus = status as 'ACTIVE' | 'PAUSED';
+    supplierFactory.setBuiltInStatus(code, normalizedStatus);
+
+    const BUILTIN_NAMES: Record<string, string> = {
+      RZK: 'Rezeki Shop',
+      PDA: 'Prime Digital',
+      DAI: 'Digital AI Store',
+    };
+
+    const updated = await prisma.supplier.upsert({
+      where: { code },
+      update: { status: normalizedStatus },
+      create: {
+        code,
+        displayName: displayName || BUILTIN_NAMES[code] || code,
+        baseUrl: baseUrl || `builtin://${code.toLowerCase()}`,
+        authType: 'BUILTIN',
+        credentialsEnc: '',
+        descriptor: '{}',
+        status: normalizedStatus,
+      },
+    });
+
+    return res.status(200).json({
+      supplier: {
+        code: updated.code,
+        displayName: updated.displayName,
+        status: updated.status,
+        isBuiltIn: true,
+      },
+    });
+  }
+
+  const updateData: any = {};
   if (displayName) updateData.displayName = displayName;
   if (baseUrl) updateData.baseUrl = baseUrl;
   if (authType) updateData.authType = authType;

@@ -13,6 +13,7 @@ import { matchBestOffer } from '../services/hermesSemanticMatcher';
 class SupplierFactory {
   private adapters = new Map<string, ISupplierAdapter>();
   private builtInAdapters = new Set<string>(['RZK', 'PDA', 'DAI']);
+  private pausedBuiltIns = new Set<string>();
 
   constructor() {
     this.registerBuiltInAdapters();
@@ -47,13 +48,62 @@ class SupplierFactory {
     }
   }
 
+  public isBuiltIn(code: string): boolean {
+    return this.builtInAdapters.has(code.toUpperCase());
+  }
+
+  public setBuiltInStatus(code: string, status: 'ACTIVE' | 'PAUSED') {
+    const upper = code.toUpperCase();
+    if (!this.builtInAdapters.has(upper)) return;
+    if (status === 'PAUSED') {
+      this.pausedBuiltIns.add(upper);
+    } else {
+      this.pausedBuiltIns.delete(upper);
+    }
+    logger.info({ code: upper, status }, 'Built-in adapter status updated');
+  }
+
+  public getBuiltInStatus(code: string): 'ACTIVE' | 'PAUSED' {
+    const upper = code.toUpperCase();
+    if (!this.builtInAdapters.has(upper)) return 'ACTIVE';
+    return this.pausedBuiltIns.has(upper) ? 'PAUSED' : 'ACTIVE';
+  }
+
+  public isAdapterActive(code: string): boolean {
+    const upper = code.toUpperCase();
+    if (this.builtInAdapters.has(upper)) {
+      return this.adapters.has(upper) && !this.pausedBuiltIns.has(upper);
+    }
+    return this.adapters.has(upper);
+  }
+
   /**
    * Loads all ACTIVE suppliers from the database and instantiates GenericRestAdapter.
+   * Also restores persisted status for Built-in adapters.
    */
   async loadFromDatabase(): Promise<void> {
     try {
+      // 1. Restore status overrides for Built-in adapters
+      const builtInOverrides = await prisma.supplier.findMany({
+        where: {
+          code: { in: Array.from(this.builtInAdapters) },
+        },
+      });
+
+      for (const rec of builtInOverrides) {
+        if (rec.status === 'PAUSED') {
+          this.pausedBuiltIns.add(rec.code.toUpperCase());
+        } else if (rec.status === 'ACTIVE') {
+          this.pausedBuiltIns.delete(rec.code.toUpperCase());
+        }
+      }
+
+      // 2. Load dynamic suppliers
       const activeSuppliers = await prisma.supplier.findMany({
-        where: { status: 'ACTIVE' },
+        where: {
+          status: 'ACTIVE',
+          authType: { not: 'BUILTIN' },
+        },
       });
 
       for (const sup of activeSuppliers) {
@@ -72,7 +122,10 @@ class SupplierFactory {
           logger.error({ err, code: sup.code }, 'Failed to instantiate GenericRestAdapter from DB');
         }
       }
-      logger.info({ count: activeSuppliers.length }, 'Suppliers loaded from database');
+      logger.info(
+        { count: activeSuppliers.length, pausedBuiltIns: Array.from(this.pausedBuiltIns) },
+        'Suppliers and built-in statuses loaded from database'
+      );
     } catch (err: any) {
       logger.error({ err }, 'Error querying suppliers from database in loadFromDatabase');
     }
@@ -121,12 +174,18 @@ class SupplierFactory {
     return adapter;
   }
 
-  hasAdapter(code: string): boolean {
-    return this.adapters.has(code.toUpperCase());
+  hasAdapter(code: string, includePaused = false): boolean {
+    const upper = code.toUpperCase();
+    if (!this.adapters.has(upper)) return false;
+    if (includePaused) return true;
+    return this.isAdapterActive(upper);
   }
 
-  getAllAdapters(): ISupplierAdapter[] {
-    return Array.from(this.adapters.values());
+  getAllAdapters(includePaused = false): ISupplierAdapter[] {
+    return Array.from(this.adapters.values()).filter((a) => {
+      if (includePaused) return true;
+      return !this.pausedBuiltIns.has(a.code.toUpperCase());
+    });
   }
 
   listSuppliers(): { code: string; displayName: string }[] {

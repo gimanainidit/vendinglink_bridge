@@ -599,13 +599,17 @@ export const handleTextMessage = async (ctx: MyContext) => {
       }
       case 'suppliers': {
         const dbSuppliers = await prisma.supplier.findMany({
+          where: { authType: { not: 'BUILTIN' } },
           orderBy: { createdAt: 'asc' },
         });
         let msg = `🏭 <b>Registered Dynamic & Built-In Suppliers:</b>\n\n`;
         msg += `<b>Built-In Adapters:</b>\n`;
-        msg += `• <b>Rezeki Shop</b> (<code>RZK</code>): ✅ BUILT-IN\n`;
-        msg += `• <b>Prime Digital</b> (<code>PDA</code>): ✅ BUILT-IN\n`;
-        msg += `• <b>Digital AI Store</b> (<code>DAI</code>): ✅ BUILT-IN\n\n`;
+        const rzkStatus = supplierFactory.getBuiltInStatus('RZK') === 'ACTIVE' ? '✅ ACTIVE' : '⏸️ PAUSED';
+        const pdaStatus = supplierFactory.getBuiltInStatus('PDA') === 'ACTIVE' ? '✅ ACTIVE' : '⏸️ PAUSED';
+        const daiStatus = supplierFactory.getBuiltInStatus('DAI') === 'ACTIVE' ? '✅ ACTIVE' : '⏸️ PAUSED';
+        msg += `• <b>Rezeki Shop</b> (<code>RZK</code>): ${rzkStatus} (BUILT-IN)\n`;
+        msg += `• <b>Prime Digital</b> (<code>PDA</code>): ${pdaStatus} (BUILT-IN)\n`;
+        msg += `• <b>Digital AI Store</b> (<code>DAI</code>): ${daiStatus} (BUILT-IN)\n\n`;
 
         if (dbSuppliers.length === 0) {
           msg += `<i>Belum ada supplier dinamis terdaftar di database.</i>\n`;

@@ -88,7 +88,7 @@ describe('P2b Dynamic Suppliers Ingress API & Telegram Commands', () => {
       expect(dbRow!.credentialsEnc).not.toContain('super-secret-api-key');
     });
 
-    it('lists registered suppliers with masked credentials', async () => {
+    it('lists registered suppliers with masked credentials and builtIns with status', async () => {
       const res = await request(app)
         .get('/api/v1/suppliers')
         .set('Authorization', `Bearer ${validSecret}`);
@@ -96,6 +96,8 @@ describe('P2b Dynamic Suppliers Ingress API & Telegram Commands', () => {
       expect(res.status).toBe(200);
       expect(Array.isArray(res.body.suppliers)).toBe(true);
       expect(res.body.builtIns).toBeDefined();
+      expect(res.body.builtIns.length).toBe(3);
+      expect(res.body.builtIns[0]).toHaveProperty('status');
 
       const found = res.body.suppliers.find((s: any) => s.code === testCode);
       expect(found).toBeDefined();
@@ -126,6 +128,34 @@ describe('P2b Dynamic Suppliers Ingress API & Telegram Commands', () => {
 
       const dbRow = await prisma.supplier.findUnique({ where: { code: testCode } });
       expect(dbRow!.status).toBe('PAUSED');
+    });
+
+    it('allows toggling built-in adapter status (e.g. PDA) between PAUSED and ACTIVE via PATCH', async () => {
+      // 1. Pause built-in PDA
+      const pauseRes = await request(app)
+        .patch('/api/v1/suppliers/PDA')
+        .set('Authorization', `Bearer ${validSecret}`)
+        .send({ status: 'PAUSED' });
+
+      expect(pauseRes.status).toBe(200);
+      expect(pauseRes.body.supplier.code).toBe('PDA');
+      expect(pauseRes.body.supplier.status).toBe('PAUSED');
+      expect(pauseRes.body.supplier.isBuiltIn).toBe(true);
+
+      const listRes = await request(app)
+        .get('/api/v1/suppliers')
+        .set('Authorization', `Bearer ${validSecret}`);
+      const pdaItem = listRes.body.builtIns.find((b: any) => b.code === 'PDA');
+      expect(pdaItem.status).toBe('PAUSED');
+
+      // 2. Reactivate built-in PDA
+      const activeRes = await request(app)
+        .patch('/api/v1/suppliers/PDA')
+        .set('Authorization', `Bearer ${validSecret}`)
+        .send({ status: 'ACTIVE' });
+
+      expect(activeRes.status).toBe(200);
+      expect(activeRes.body.supplier.status).toBe('ACTIVE');
     });
 
     it('triggers on-demand dry-run validation', async () => {
