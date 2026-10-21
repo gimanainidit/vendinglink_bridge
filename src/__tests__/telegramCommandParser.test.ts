@@ -277,6 +277,77 @@ describe('Telegram Command Parser & Formatting', () => {
       });
       expect(mapping).toBeNull();
     });
+
+    it('handles already approved mapping gracefully when another admin clicks approve or reject', async () => {
+      const { handleCallbackQuery } = await import('../telegram/callbacks/confirmBuy');
+      const { prisma } = await import('../db');
+      const vlClient = await import('../vendinglink/vendingLinkClient');
+
+      const testSku = 'loc_concurrent_' + Date.now();
+      const req = await prisma.productRequest.create({
+        data: {
+          id: 'test-req-concurrent-' + Date.now(),
+          idempotencyKey: 'idemp-concurrent-' + Date.now(),
+          query: 'concurrent product test',
+          customerRef: '628111222333',
+          status: 'FOUND',
+          foundSupplierCode: 'RZK',
+          foundProductId: testSku,
+          vlProductId: 'cmvbqvc550001afrx1uz0dafi',
+          quotedPrice: 5000,
+        },
+      });
+
+      const syncSpy = vi.spyOn(vlClient, 'syncProductMappingToVendingLink').mockResolvedValue({
+        success: true,
+      });
+
+      // Admin 1 approves
+      const ctxAdmin1: any = {
+        callbackQuery: { data: `map_app_${req.id}` },
+        from: { username: 'Meet_me_a' },
+        editMessageText: vi.fn(),
+        answerCbQuery: vi.fn(),
+        session: {},
+      };
+      await handleCallbackQuery(ctxAdmin1);
+      expect(ctxAdmin1.editMessageText).toHaveBeenCalledWith(
+        expect.stringContaining('@Meet_me_a'),
+        expect.anything()
+      );
+
+      // Admin 2 clicks approve on their message
+      const ctxAdmin2: any = {
+        callbackQuery: { data: `map_app_${req.id}` },
+        from: { username: 'adxpr2' },
+        editMessageText: vi.fn(),
+        answerCbQuery: vi.fn(),
+        session: {},
+      };
+      await handleCallbackQuery(ctxAdmin2);
+      expect(ctxAdmin2.answerCbQuery).toHaveBeenCalledWith(
+        expect.stringContaining('Mapping berhasil disetujui (sudah tersimpan sebelumnya)!')
+      );
+
+      // Admin 3 tries to click reject on already approved mapping
+      const ctxAdmin3: any = {
+        callbackQuery: { data: `map_rej_${req.id}` },
+        from: { username: 'eeeppp00' },
+        editMessageText: vi.fn(),
+        answerCbQuery: vi.fn(),
+        session: {},
+      };
+      await handleCallbackQuery(ctxAdmin3);
+      expect(ctxAdmin3.answerCbQuery).toHaveBeenCalledWith(
+        expect.stringContaining('sudah disetujui sebelumnya')
+      );
+      expect(ctxAdmin3.editMessageText).toHaveBeenCalledWith(
+        expect.stringContaining('Mapping Telah Aktif Sebelumnya'),
+        expect.anything()
+      );
+
+      syncSpy.mockRestore();
+    });
   });
 });
 

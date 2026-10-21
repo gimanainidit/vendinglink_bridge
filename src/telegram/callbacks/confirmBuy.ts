@@ -39,6 +39,24 @@ export const handleCallbackQuery = async (ctx: MyContext) => {
         return;
       }
 
+      const approver = ctx.from?.username
+        ? `@${ctx.from.username}`
+        : ctx.from?.first_name || (ctx.from?.id ? `ID:${ctx.from.id}` : 'Admin');
+
+      // Check if already mapped by another admin
+      const existingMapping = await prisma.productMapping.findUnique({
+        where: {
+          supplierCode_supplierProductId: {
+            supplierCode: req.foundSupplierCode,
+            supplierProductId: req.foundProductId,
+          },
+        },
+      });
+
+      const isAlreadyMapped = Boolean(
+        existingMapping && existingMapping.vlProductId === req.vlProductId
+      );
+
       // Upsert in Bridge SQLite
       await prisma.productMapping.upsert({
         where: {
@@ -66,7 +84,11 @@ export const handleCallbackQuery = async (ctx: MyContext) => {
         req.vlProductId
       );
 
-      await ctx.answerCbQuery('✅ Mapping berhasil disetujui & disimpan!');
+      await ctx.answerCbQuery(
+        isAlreadyMapped
+          ? '✅ Mapping berhasil disetujui (sudah tersimpan sebelumnya)!'
+          : '✅ Mapping berhasil disetujui & disimpan!'
+      );
 
       const syncNote = syncResult.success
         ? '🔗 <i>Tersinkronisasi ke VendingLink Storefront & Bridge SQLite.</i>'
@@ -77,7 +99,8 @@ export const handleCallbackQuery = async (ctx: MyContext) => {
         `• <b>Permintaan:</b> <i>${escapeHtml(req.query)}</i>\n` +
         `• <b>Supplier:</b> <code>${escapeHtml(req.foundSupplierCode)}</code> (<code>${escapeHtml(req.foundProductId)}</code>)\n` +
         `• <b>VendingLink Product ID:</b> <code>${escapeHtml(req.vlProductId)}</code>\n` +
-        `• <b>Status:</b> <b>MAPPED</b>\n\n` +
+        `• <b>Status:</b> <b>MAPPED</b>\n` +
+        `• <b>Diproses oleh:</b> ${escapeHtml(approver)}\n\n` +
         syncNote,
         { parse_mode: 'HTML' }
       );
@@ -90,10 +113,44 @@ export const handleCallbackQuery = async (ctx: MyContext) => {
         where: { id: reqId },
       });
 
+      if (!req) {
+        await ctx.answerCbQuery('❌ Permintaan tidak ditemukan.');
+        return;
+      }
+
+      const rejector = ctx.from?.username
+        ? `@${ctx.from.username}`
+        : ctx.from?.first_name || (ctx.from?.id ? `ID:${ctx.from.id}` : 'Admin');
+
+      // Check if mapping was already approved
+      const existingMapping = req.foundSupplierCode && req.foundProductId
+        ? await prisma.productMapping.findUnique({
+            where: {
+              supplierCode_supplierProductId: {
+                supplierCode: req.foundSupplierCode,
+                supplierProductId: req.foundProductId,
+              },
+            },
+          })
+        : null;
+
+      if (existingMapping && req.vlProductId && existingMapping.vlProductId === req.vlProductId) {
+        await ctx.answerCbQuery('ℹ️ Permintaan ini sudah disetujui sebelumnya oleh admin.');
+        await ctx.editMessageText(
+          `ℹ️ <b>Mapping Telah Aktif Sebelumnya</b>\n\n` +
+          `• <b>Permintaan:</b> <i>${escapeHtml(req.query || reqId)}</i>\n` +
+          `• <b>Supplier:</b> <code>${escapeHtml(req.foundSupplierCode || '')}</code> (<code>${escapeHtml(req.foundProductId || '')}</code>)\n` +
+          `• <b>Status:</b> Mapping sudah disetujui dan aktif di etalase Storefront.`,
+          { parse_mode: 'HTML' }
+        );
+        return;
+      }
+
       await ctx.answerCbQuery('Mapping ditolak.');
       await ctx.editMessageText(
         `❌ <b>Mapping Hermes Ditolak</b>\n\n` +
         `• <b>Permintaan:</b> <i>${escapeHtml(req?.query || reqId)}</i>\n` +
+        `• <b>Ditolak oleh:</b> ${escapeHtml(rejector)}\n` +
         `• <b>Status:</b> Saran pemetaan ditolak oleh admin. Tidak ada perubahan mapping dibuat.`,
         { parse_mode: 'HTML' }
       );
