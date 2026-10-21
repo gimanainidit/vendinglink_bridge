@@ -1,4 +1,4 @@
-﻿import { supplierFactory } from '../suppliers/SupplierFactory';
+import { supplierFactory } from '../suppliers/SupplierFactory';
 import { agentGuardrailService } from './agentGuardrailService';
 import { bot } from '../telegram/bot';
 import { env } from '../config/env';
@@ -9,9 +9,23 @@ export const runBalanceMonitor = async (): Promise<void> => {
   try {
     const settings = agentGuardrailService.getSettings();
     const floor = settings.minBalanceFloor;
+    const allowedSuppliers = settings.allowedSuppliers;
     const adapters = supplierFactory.getAllAdapters();
 
     for (const adapter of adapters) {
+      // Skip if supplier is not in AGENT_ALLOWED_SUPPLIER_CODES allowlist
+      if (
+        allowedSuppliers &&
+        allowedSuppliers.length > 0 &&
+        !allowedSuppliers.includes(adapter.code.toUpperCase())
+      ) {
+        logger.debug(
+          { code: adapter.code },
+          'Skipping balance monitor check for non-allowlisted supplier'
+        );
+        continue;
+      }
+
       try {
         const balance = await adapter.getBalance();
         logger.debug({ code: adapter.code, balance, floor }, 'Supplier balance check');
