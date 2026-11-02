@@ -75,6 +75,8 @@ model ProductMapping {
   supplierProductId   String
   displayName         String?
   enabled             Boolean @default(true)
+  storefrontSyncedAt  DateTime?
+  lastSyncError       String?
 
   @@id([supplierCode, supplierProductId])
   @@index([vlProductId])

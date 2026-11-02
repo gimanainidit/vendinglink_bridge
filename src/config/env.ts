@@ -17,6 +17,9 @@ const envSchema = z.object({
   BRIDGE_SECRET_KEY: z.string().min(1),
   KEYS_ENCRYPTION_KEY: z.string().min(1),
   MAX_BUY_QTY: z.coerce.number().int().min(1).max(100).default(100),
+  // Enable only after scripts/backfillMappingSync.ts has run, or legacy mappings are blocked as unsynced.
+  // Parsed as an enum because z.coerce.boolean() reads the string "false" as true.
+  STOREFRONT_GATE_ENABLED: z.enum(['true', 'false']).default('false').transform((v) => v === 'true'),
   // Suppliers
   // @deprecated Use dynamic DB Supplier entries instead. Retained for backward compatibility fallback.
   SUPPLIER_RZK_BASE_URL: z.string().url().optional(),
