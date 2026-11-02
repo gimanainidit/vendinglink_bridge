@@ -1,9 +1,35 @@
 import { Context, Middleware } from 'telegraf';
 
 // Extend context to include session
+export interface PendingList {
+  listId: string;
+  supplierCode: string;
+  supplierName: string;
+  search?: string;
+  createdAt: number;
+  selectedIndex?: number;
+  items: Array<{
+    id: string;
+    name: string;
+    price?: number;
+    currency?: string;
+    inStock: boolean;
+    requiresEmail: boolean;
+  }>;
+}
+
 export interface SessionData {
-  state?: 'AWAITING_EMAIL' | 'AWAITING_CONFIRM';
+  state?: 'AWAITING_EMAIL' | 'AWAITING_CONFIRM' | 'AWAITING_QTY';
   pendingBuy?: {
+    supplierCode: string;
+    productId: string;
+    qty: number;
+    emails?: string[];
+    confirmToken?: string;
+  };
+  pendingList?: PendingList;
+  // A purchase stopped by the mapping gate, resumed by its gate_* buttons.
+  resumeBuy?: {
     supplierCode: string;
     productId: string;
     qty: number;

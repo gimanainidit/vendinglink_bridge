@@ -1,16 +1,21 @@
 import { MyContext } from '../middleware/session';
 import { logger } from '../../lib/logger';
-import { createPendingTransaction, resolveVlProductId } from '../../services/orchestrator';
+import { createPendingTransaction } from '../../services/orchestrator';
+import { checkPurchasable, saveMapping } from '../../services/mappingService';
 import { prisma } from '../../db';
 import { supplierOrderQueue } from '../../queues/queues';
-import { buildProductGridKeyboard, escapeHtml } from '../router';
-import { fetchVendingLinkProducts, syncProductMappingToVendingLink } from '../../vendinglink/vendingLinkClient';
+import { buildProductGridKeyboard, escapeHtml, replyGateBlock, syncNote } from '../router';
+import { fetchVendingLinkProducts } from '../../vendinglink/vendingLinkClient';
+import { handleGateCallback, handleListCallback } from './listFlow';
 
 export const handleCallbackQuery = async (ctx: MyContext) => {
   if (!ctx.callbackQuery || !('data' in ctx.callbackQuery)) return;
   const data = ctx.callbackQuery.data;
 
   try {
+    if (await handleListCallback(ctx, data)) return;
+    if (await handleGateCallback(ctx, data)) return;
+
     if (data.startsWith('map_app_')) {
       const reqId = data.replace('map_app_', '');
       const req = await prisma.productRequest.findUnique({
@@ -57,42 +62,21 @@ export const handleCallbackQuery = async (ctx: MyContext) => {
         existingMapping && existingMapping.vlProductId === req.vlProductId
       );
 
-      // Upsert in Bridge SQLite
-      await prisma.productMapping.upsert({
-        where: {
-          supplierCode_supplierProductId: {
-            supplierCode: req.foundSupplierCode,
-            supplierProductId: req.foundProductId,
-          },
-        },
-        update: {
-          vlProductId: req.vlProductId,
-          displayName: req.query,
-        },
-        create: {
-          supplierCode: req.foundSupplierCode,
-          supplierProductId: req.foundProductId,
-          vlProductId: req.vlProductId,
-          displayName: req.query,
-        },
+      // Save in Bridge and sync to VendingLink Storefront
+      const saved = await saveMapping({
+        supplierCode: req.foundSupplierCode,
+        supplierProductId: req.foundProductId,
+        vlProductId: req.vlProductId,
+        displayName: req.query,
       });
 
-      // Sync to VendingLink Storefront
-      const syncResult = await syncProductMappingToVendingLink(
-        req.foundSupplierCode,
-        req.foundProductId,
-        req.vlProductId
-      );
+      if (!saved.ok) return;
 
       await ctx.answerCbQuery(
         isAlreadyMapped
           ? '✅ Mapping berhasil disetujui (sudah tersimpan sebelumnya)!'
           : '✅ Mapping berhasil disetujui & disimpan!'
       );
-
-      const syncNote = syncResult.success
-        ? '🔗 <i>Tersinkronisasi ke VendingLink Storefront & Bridge SQLite.</i>'
-        : `⚠️ <i>Tersimpan di Bridge, namun sinkronisasi Storefront gagal: ${escapeHtml(syncResult.error || '')}</i>`;
 
       await ctx.editMessageText(
         `✅ <b>Mapping Produk Disetujui!</b>\n\n` +
@@ -101,7 +85,7 @@ export const handleCallbackQuery = async (ctx: MyContext) => {
         `• <b>VendingLink Product ID:</b> <code>${escapeHtml(req.vlProductId)}</code>\n` +
         `• <b>Status:</b> <b>MAPPED</b>\n` +
         `• <b>Diproses oleh:</b> ${escapeHtml(approver)}\n\n` +
-        syncNote,
+        syncNote(saved),
         { parse_mode: 'HTML' }
       );
       return;
@@ -158,6 +142,10 @@ export const handleCallbackQuery = async (ctx: MyContext) => {
     }
 
     if (data === 'buy_cancel') {
+      ctx.session.state = undefined;
+      ctx.session.pendingBuy = undefined;
+      ctx.session.resumeBuy = undefined;
+      await ctx.answerCbQuery();
       await ctx.editMessageText('❌ Purchase cancelled.');
       return;
     }
@@ -247,39 +235,42 @@ export const handleCallbackQuery = async (ctx: MyContext) => {
       if (session.supplierCode && session.supplierProductId) {
         const { supplierCode, supplierProductId, supplierProductName } = session;
 
-        const existing = await prisma.productMapping.findUnique({
-          where: {
-            supplierCode_supplierProductId: { supplierCode, supplierProductId },
-          },
+        const saved = await saveMapping({
+          supplierCode,
+          supplierProductId,
+          vlProductId: selected.vlProductId,
+          displayName: selected.name,
         });
 
-        await prisma.productMapping.upsert({
-          where: {
-            supplierCode_supplierProductId: { supplierCode, supplierProductId },
-          },
-          update: {
-            vlProductId: selected.vlProductId,
-            displayName: selected.name,
-          },
-          create: {
-            supplierCode,
-            supplierProductId,
-            vlProductId: selected.vlProductId,
-            displayName: selected.name,
-          },
-        });
+        if (!saved.ok) return;
 
         ctx.session.pendingMap = undefined;
 
-        const action = existing ? 'diperbarui' : 'dibuat';
+        const resume = ctx.session.resumeBuy;
+        const canResume = resume?.supplierCode === supplierCode && resume.productId === supplierProductId;
+
+        const action = saved.created ? 'dibuat' : 'diperbarui';
         await ctx.editMessageText(
           `✅ <b>Mapping Produk Berhasil ${action}!</b>\n\n` +
           `• <b>Supplier:</b> <code>${escapeHtml(supplierCode)}</code>\n` +
           `• <b>Produk Supplier:</b> <code>${escapeHtml(supplierProductId)}</code>${supplierProductName ? ` (${escapeHtml(supplierProductName)})` : ''}\n` +
           `• <b>Produk VendingLink:</b> <b>${escapeHtml(selected.name)}</b> (<code>${escapeHtml(selected.vlProductId)}</code>)\n\n` +
-          `🚀 Sekarang Anda bisa langsung membeli produk ini dengan:\n` +
-          `<code>/buy ${escapeHtml(supplierCode)} ${escapeHtml(supplierProductId)}</code>`,
-          { parse_mode: 'HTML' }
+          `${syncNote(saved)}\n\n` +
+          (canResume
+            ? `🛒 Lanjutkan pembelian dengan tombol di bawah.`
+            : `🚀 Sekarang Anda bisa langsung membeli produk ini dengan:\n` +
+              `<code>/buy ${escapeHtml(supplierCode)} ${escapeHtml(supplierProductId)}</code>`),
+          {
+            parse_mode: 'HTML',
+            ...(canResume && {
+              reply_markup: {
+                inline_keyboard: [[
+                  { text: '🛒 Lanjut beli', callback_data: 'gate_retry' },
+                  { text: '❌ Batal', callback_data: 'buy_cancel' },
+                ]],
+              },
+            }),
+          }
         );
         return;
       }
@@ -320,43 +311,30 @@ export const handleCallbackQuery = async (ctx: MyContext) => {
       return;
     }
 
-    if (data.startsWith('buy_confirm_')) {
-      const parts = data.split('_');
-      // buy_confirm_SUPPLIER_PRODUCTID_QTY
-      // PRODUCTID may itself contain underscores (e.g. "loc_test1"),
-      // so supplier = first segment after prefix, qty = last segment, productId = everything in between.
-      const supplier = parts[2];
-      const qty = parseInt(parts[parts.length - 1], 10);
-      const productId = parts.slice(3, -1).join('_');
+    if (data.startsWith('buy_ok_')) {
+      const token = data.replace('buy_ok_', '');
+      const pending = ctx.session.pendingBuy;
 
-      if (!supplier || !productId || isNaN(qty) || qty < 1) {
-        await ctx.editMessageText('❌ Invalid confirmation data. Please run /buy again.');
+      if (!pending?.confirmToken || pending.confirmToken !== token) {
+        await ctx.answerCbQuery('Konfirmasi sudah dipakai atau kedaluwarsa.', { show_alert: true });
         return;
       }
 
-      // Extract emails if they were saved in session
-      let emails: string[] | undefined;
-      if (ctx.session.pendingBuy && ctx.session.pendingBuy.productId === productId && ctx.session.pendingBuy.qty === qty) {
-        emails = ctx.session.pendingBuy.emails;
-      }
-      
-      // Wipe session
+      // Wipe session before any await: the token is single-use, so a double tap can't buy twice.
       ctx.session.state = undefined;
       ctx.session.pendingBuy = undefined;
-      
+
+      const { supplierCode: supplier, productId, qty, emails } = pending;
+
+      await ctx.answerCbQuery();
       await ctx.editMessageText(`⏳ Enqueueing purchase of ${qty}x ${productId} from ${supplier}...`);
-      
+
       try {
-        // BR-5e hard block: refuse to spend money on an unmapped product.
-        // resolveVlProductId already has this data, so we check before enqueueing.
-        const vlProductId = await resolveVlProductId(supplier, productId);
-        if (!vlProductId) {
-          await ctx.reply(
-            `❌ <b>Produk belum dimapping ke VendingLink</b>.\n` +
-            `Jalankan dulu: <code>/map ${escapeHtml(supplier)} ${escapeHtml(productId)} &lt;VL_PRODUCT_ID&gt;</code>\n` +
-            `Pembelian tidak dilanjutkan.`,
-            { parse_mode: 'HTML' }
-          );
+        // BR-5e hard block: re-check right before spending money, since the mapping
+        // or the Storefront product may have changed since the Confirm screen.
+        const gate = await checkPurchasable(supplier, productId);
+        if (!gate.ok) {
+          await replyGateBlock(ctx, gate, { supplierCode: supplier, productId, qty, emails });
           return;
         }
 

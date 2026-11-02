@@ -154,6 +154,15 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '404':
           description: ProductRequest tidak ditemukan.
+        '409':
+          description: |
+            Produk belum siap dibeli, tidak ada pembelian yang dibuat. Status request tetap `FOUND`,
+            jadi konfirmasi bisa diulang setelah admin membereskan mapping. Field `reason` berisi
+            `unmapped`, `disabled`, `not_synced`, atau `not_in_catalog`.
+        '503':
+          description: |
+            Storefront tidak dapat dihubungi saat validasi (`reason`: `storefront_unavailable`).
+            Tidak ada pembelian yang dibuat, status tetap `FOUND`, dan konfirmasi bisa diulang.
         '401':
           description: Unauthorized.
 

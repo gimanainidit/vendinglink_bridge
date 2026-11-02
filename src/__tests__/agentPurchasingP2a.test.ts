@@ -5,6 +5,12 @@ import { env } from '../config/env';
 import { prisma } from '../db';
 import { agentGuardrailService } from '../services/agentGuardrailService';
 import { productSearchQueue, supplierOrderQueue } from '../queues/queues';
+import { checkPurchasable } from '../services/mappingService';
+import { createPendingTransaction } from '../services/orchestrator';
+
+vi.mock('../services/mappingService', () => ({
+  checkPurchasable: vi.fn().mockResolvedValue({ ok: true, vlProductId: 'vl_1' }),
+}));
 
 vi.mock('../queues/queues', () => ({
   productSearchQueue: {
@@ -187,10 +193,64 @@ describe('P2a Agentic Purchasing & Guardrail Tests', () => {
       expect(res.body.status).toBe('CONFIRMED');
       expect(res.body.transactionId).toBe('BRG-20261011-P2A001');
       expect(supplierOrderQueue.add).toHaveBeenCalled();
+      expect(checkPurchasable).toHaveBeenCalledWith('PDA', 'pda_canva');
 
       const updated = await prisma.productRequest.findUnique({ where: { id: reqRecord.id } });
       expect(updated?.status).toBe('CONFIRMED');
       expect(updated?.transactionId).toBe('BRG-20261011-P2A001');
+    });
+
+    describe('mapping gate', () => {
+      const createFoundRequest = (suffix: string) =>
+        prisma.productRequest.create({
+          data: {
+            idempotencyKey: `gate-${suffix}-${Date.now()}`,
+            customerRef: 'cust_505',
+            query: 'Gated Item',
+            status: 'FOUND',
+            foundSupplierCode: 'PDA',
+            foundProductId: 'pda_gated',
+            quotedPrice: 1.5,
+          },
+        });
+
+      it.each([
+        ['unmapped', 409],
+        ['disabled', 409],
+        ['not_synced', 409],
+        ['not_in_catalog', 409],
+        ['storefront_unavailable', 503],
+      ] as const)('blocks %s with %i and leaves the request confirmable', async (reason, status) => {
+        vi.mocked(checkPurchasable).mockResolvedValueOnce({ ok: false, reason, error: 'internal detail' });
+        const reqRecord = await createFoundRequest(reason);
+
+        const res = await request(app)
+          .post(`/api/v1/requests/${reqRecord.id}/confirm`)
+          .set('Authorization', `Bearer ${validSecret}`);
+
+        expect(res.status).toBe(status);
+        expect(res.body.reason).toBe(reason);
+        expect(JSON.stringify(res.body)).not.toContain('internal detail');
+        expect(createPendingTransaction).not.toHaveBeenCalled();
+        expect(supplierOrderQueue.add).not.toHaveBeenCalled();
+
+        const updated = await prisma.productRequest.findUnique({ where: { id: reqRecord.id } });
+        expect(updated?.status).toBe('FOUND');
+        expect(updated?.transactionId).toBeNull();
+      });
+
+      it('confirms on retry once the mapping is ready', async () => {
+        vi.mocked(checkPurchasable).mockResolvedValueOnce({ ok: false, reason: 'unmapped' });
+        const reqRecord = await createFoundRequest('retry');
+        const url = `/api/v1/requests/${reqRecord.id}/confirm`;
+
+        await request(app).post(url).set('Authorization', `Bearer ${validSecret}`);
+        const res = await request(app).post(url).set('Authorization', `Bearer ${validSecret}`);
+
+        expect(res.status).toBe(200);
+        expect(res.body.status).toBe('CONFIRMED');
+        expect(supplierOrderQueue.add).toHaveBeenCalledTimes(1);
+      });
     });
 
     it('rejects confirmation if request is not in FOUND state', async () => {

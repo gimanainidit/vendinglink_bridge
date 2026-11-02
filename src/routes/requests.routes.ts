@@ -4,6 +4,7 @@ import { env } from '../config/env';
 import { prisma } from '../db';
 import { productSearchQueue, supplierOrderQueue } from '../queues/queues';
 import { createPendingTransaction } from '../services/orchestrator';
+import { checkPurchasable } from '../services/mappingService';
 import { logger } from '../lib/logger';
 
 export const requestsRouter = Router();
@@ -172,6 +173,19 @@ requestsRouter.post('/:id/confirm', async (req: Request, res: Response) => {
       return res.status(400).json({
         error: 'ProductRequest does not have supplier or product details attached.',
       });
+    }
+
+    // FOUND reaches the customer at the same time as the admin's mapping prompt, so a confirm
+    // can arrive before the mapping exists. The request stays FOUND and can be confirmed again.
+    const gate = await checkPurchasable(productRequest.foundSupplierCode, productRequest.foundProductId);
+    if (!gate.ok) {
+      logger.warn(
+        { requestId: productRequest.id, reason: gate.reason, error: gate.error },
+        'ProductRequest confirmation blocked by mapping gate'
+      );
+      return gate.reason === 'storefront_unavailable'
+        ? res.status(503).json({ error: 'Storefront is unavailable. Try again later.', reason: gate.reason })
+        : res.status(409).json({ error: 'Product is not ready for purchase.', reason: gate.reason });
     }
 
     const adminChatId = env.ADMIN_TELEGRAM_ID.split(',')[0].trim();

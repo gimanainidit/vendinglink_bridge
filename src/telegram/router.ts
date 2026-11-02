@@ -8,9 +8,11 @@ import { prisma } from '../db';
 import { agentGuardrailService } from '../services/agentGuardrailService';
 import { adapterBuildService } from '../services/adapterBuildService';
 import { fetchVendingLinkProducts } from '../vendinglink/vendingLinkClient';
+import { checkPurchasable, GateResult, saveMapping, SyncState } from '../services/mappingService';
+import { escapeHtml, formatMoney } from './format';
+import { createList, createToken, isListActive, parseListInput, renderListPage, renderProductCard } from './listView';
 
-export const escapeHtml = (str: string): string =>
-  str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+export { escapeHtml };
 
 // Stubs for controllers (to be implemented in Phase 2)
 const listController = async (ctx: MyContext, supplierCode: string, search?: string) => {
@@ -18,33 +20,100 @@ const listController = async (ctx: MyContext, supplierCode: string, search?: str
     const adapter = supplierFactory.getAdapter(supplierCode);
     await ctx.reply(`⏳ Fetching products from ${adapter.displayName}...`);
     const products = await adapter.getProductList(search);
-    
+
     if (products.length === 0) {
       await ctx.reply(`No products found${search ? ' matching ' + search : ''}.`);
       return;
     }
 
-    let msg = `📦 <b>${escapeHtml(adapter.displayName)} Products:</b>\n\n`;
-    for (const p of products.slice(0, 15)) {
-      const status = p.availability === 'in_stock' ? '✅' : '❌';
-      const emailBadge = p.requiresEmail ? ' 📧' : '';
-      const safeName = escapeHtml(p.name);
-      const formattedPrice = p.currency === 'USD' ? `$${p.price?.toFixed(2)} USD` : `Rp${p.price?.toLocaleString('id-ID') || '?'}`;
-      msg += `${status} <code>${escapeHtml(p.id)}</code> - ${safeName}${emailBadge} - ${formattedPrice}\n`;
-    }
-    
-    if (products.length > 15) {
-      msg += `\n<i>...and ${products.length - 15} more. Gunakan: /list ${escapeHtml(adapter.code)} &lt;keyword&gt; untuk filter.</i>`;
-    }
-    
-    await ctx.reply(msg, { parse_mode: 'HTML' });
+    ctx.session.state = undefined;
+    ctx.session.pendingBuy = undefined;
+    ctx.session.resumeBuy = undefined;
+    ctx.session.pendingList = createList(adapter.code, adapter.displayName, products, search);
+
+    const { text, keyboard } = renderListPage(ctx.session.pendingList, 0);
+    await ctx.reply(text, { parse_mode: 'HTML', reply_markup: { inline_keyboard: keyboard } });
   } catch (err: any) {
     await ctx.reply(`❌ ${err.message}`);
   }
 };
 
-const buyPreCheck = async (ctx: MyContext, supplierCode: string, productId: string, qty: number, emails?: string[]) => {
+export const showProductCard = async (ctx: MyContext, index: number, mode: 'reply' | 'edit') => {
+  const list = ctx.session.pendingList!;
+  const mapping = await prisma.productMapping.findUnique({
+    where: {
+      supplierCode_supplierProductId: { supplierCode: list.supplierCode, supplierProductId: list.items[index].id },
+    },
+  });
+
+  list.selectedIndex = index;
+  ctx.session.state = 'AWAITING_QTY';
+
+  const { text, keyboard } = renderProductCard(list, index, Boolean(mapping), env.MAX_BUY_QTY);
+  const extra = { parse_mode: 'HTML' as const, reply_markup: { inline_keyboard: keyboard } };
+  if (mode === 'edit') {
+    await ctx.editMessageText(text, extra);
+  } else {
+    await ctx.reply(text, extra);
+  }
+};
+
+export const syncNote = (sync: SyncState): string =>
+  sync.synced
+    ? '🔗 <i>Tersinkronisasi ke Storefront.</i>'
+    : `⚠️ <i>Tersimpan di Bridge, tetapi sync ke Storefront gagal: ${escapeHtml(sync.syncError || 'unknown')}</i>`;
+
+const describeGateBlock = (gate: Exclude<GateResult, { ok: true }>, supplierCode: string, productId: string) => {
+  const safeRef = `<code>${escapeHtml(supplierCode)}</code> <code>${escapeHtml(productId)}</code>`;
+  const detail = gate.error ? `\n<i>${escapeHtml(gate.error)}</i>` : '';
+  const cancel = { text: '❌ Batal', callback_data: 'buy_cancel' };
+
+  switch (gate.reason) {
+    case 'unmapped':
+      return {
+        text: `⚠️ <b>Produk belum dimapping</b> ke Storefront.\n${safeRef}\nPembelian belum bisa dilanjutkan.`,
+        buttons: [[{ text: '🗺️ Map dulu', callback_data: 'gate_map' }, cancel]],
+      };
+    case 'disabled':
+      return {
+        text: `⛔ <b>Mapping produk ini dinonaktifkan.</b>\n${safeRef}\nAktifkan mapping sebelum membeli.`,
+        buttons: [[cancel]],
+      };
+    case 'not_synced':
+      return {
+        text: `⚠️ <b>Mapping belum tersinkron ke Storefront.</b>\n${safeRef}${detail}`,
+        buttons: [[{ text: '🔄 Sync ulang', callback_data: 'gate_sync' }, cancel]],
+      };
+    case 'not_in_catalog':
+      return {
+        text: `⚠️ <b>Produk tujuan tidak ada atau nonaktif di Storefront.</b>\n${safeRef}\nPetakan ulang ke produk yang aktif.`,
+        buttons: [[{ text: '🗺️ Map ulang', callback_data: 'gate_map' }, cancel]],
+      };
+    case 'storefront_unavailable':
+      return {
+        text: `⚠️ <b>Storefront tidak dapat dihubungi</b>, pembelian ditahan.${detail}`,
+        buttons: [[{ text: '🔄 Coba lagi', callback_data: 'gate_retry' }, cancel]],
+      };
+  }
+};
+
+export const replyGateBlock = async (
+  ctx: MyContext,
+  gate: Exclude<GateResult, { ok: true }>,
+  purchase: { supplierCode: string; productId: string; qty: number; emails?: string[] }
+) => {
+  ctx.session.resumeBuy = purchase;
+  const { text, buttons } = describeGateBlock(gate, purchase.supplierCode, purchase.productId);
+  await ctx.reply(text, { parse_mode: 'HTML', reply_markup: { inline_keyboard: buttons } });
+};
+
+export const buyPreCheck = async (ctx: MyContext, supplierCode: string, productId: string, qty: number, emails?: string[]) => {
   try {
+    // A new purchase replaces any unfinished one, so stale state can't capture the next message.
+    ctx.session.state = undefined;
+    ctx.session.pendingBuy = undefined;
+    ctx.session.resumeBuy = undefined;
+
     const adapter = supplierFactory.getAdapter(supplierCode);
     const product = await adapter.getProduct(productId);
 
@@ -58,6 +127,21 @@ const buyPreCheck = async (ctx: MyContext, supplierCode: string, productId: stri
       return;
     }
 
+    // An unknown price would make the total 0 and pass the balance check.
+    if (product.price === undefined || product.price === null) {
+      await ctx.reply(`❌ Harga ${product.name} tidak tersedia dari supplier. Pembelian dibatalkan.`);
+      return;
+    }
+
+    // --- BR-5e: mapping gate ---
+    // Runs before the email prompt so the admin doesn't type emails for a blocked product.
+    // Runs again at enqueue time in confirmBuy.ts.
+    const gate = await checkPurchasable(adapter.code, productId);
+    if (!gate.ok) {
+      await replyGateBlock(ctx, gate, { supplierCode: adapter.code, productId, qty, emails });
+      return;
+    }
+
     if (product.requiresEmail && (!emails || emails.length !== qty)) {
       ctx.session.state = 'AWAITING_EMAIL';
       ctx.session.pendingBuy = { supplierCode, productId, qty };
@@ -65,33 +149,18 @@ const buyPreCheck = async (ctx: MyContext, supplierCode: string, productId: stri
       return;
     }
 
-    const price = product.price || 0;
-    const total = price * qty;
+    const total = product.price * qty;
 
     // Check balance
     const balance = await adapter.getBalance();
 
-    // --- BR-5e: early mapping warning ---
-    // Show advisory BEFORE the Confirm button so admin can /map first.
-    // Hard block runs again at enqueue time in confirmBuy.ts.
-    const mapping = await prisma.productMapping.findUnique({
-      where: {
-        supplierCode_supplierProductId: { supplierCode: adapter.code, supplierProductId: productId },
-      },
-    });
-
     const safeSupplierCode = escapeHtml(adapter.code);
-    const safeProductId = escapeHtml(productId);
     const safeSupplierName = escapeHtml(adapter.displayName);
     const safeProductName = escapeHtml(product.name);
 
-    const mappingWarning = mapping
-      ? ''
-      : `\n⚠️ <b>Produk belum dimapping!</b> Jalankan:\n<code>/map ${safeSupplierCode} ${safeProductId}</code>\n<i>(Pilih produk VendingLink yang cocok dari tombol)</i>\n`;
-
-    const totalFormatted = adapter.code === 'PDA' ? `$${total.toFixed(2)} USD` : `Rp${total.toLocaleString('id-ID')}`;
-    const balanceBeforeFormatted = adapter.code === 'PDA' ? `$${balance.toFixed(2)} USD` : `Rp${balance.toLocaleString('id-ID')}`;
-    const balanceAfterFormatted = adapter.code === 'PDA' ? `$${(balance - total).toFixed(2)} USD` : `Rp${(balance - total).toLocaleString('id-ID')}`;
+    const totalFormatted = formatMoney(total, product.currency);
+    const balanceBeforeFormatted = formatMoney(balance, product.currency);
+    const balanceAfterFormatted = formatMoney(balance - total, product.currency);
 
     let msg = `🛒 <b>Confirm Purchase</b>\n\n`;
     msg += `Supplier: ${safeSupplierName} (<code>${safeSupplierCode}</code>)\n`;
@@ -102,19 +171,24 @@ const buyPreCheck = async (ctx: MyContext, supplierCode: string, productId: stri
     }
     msg += `Total: ${totalFormatted}\n`;
     msg += `Balance: ${balanceBeforeFormatted} → ${balanceAfterFormatted}\n`;
-    msg += mappingWarning;
 
     if (balance < total) {
       await ctx.reply(`❌ Insufficient balance!\n\n${msg}`, { parse_mode: 'HTML' });
       return;
     }
 
+    // The session carries the purchase, including inline /buy emails; the button only
+    // carries a one-time token, which also keeps it inside Telegram's 64-byte limit.
+    const confirmToken = createToken();
+    ctx.session.state = 'AWAITING_CONFIRM';
+    ctx.session.pendingBuy = { supplierCode: adapter.code, productId, qty, emails, confirmToken };
+
     await ctx.reply(msg, {
       parse_mode: 'HTML',
       reply_markup: {
         inline_keyboard: [
           [
-            { text: '✅ Confirm', callback_data: `buy_confirm_${supplierCode}_${productId}_${qty}` },
+            { text: '✅ Confirm', callback_data: `buy_ok_${confirmToken}` },
             { text: '❌ Cancel', callback_data: 'buy_cancel' }
           ]
         ]
@@ -398,26 +472,21 @@ export const mapController = async (ctx: MyContext, command: ParsedCommand) => {
     // If exactly 1 match by name
     if (searchMatches.length === 1) {
       const match = searchMatches[0];
-      const existing = await prisma.productMapping.findUnique({
-        where: {
-          supplierCode_supplierProductId: { supplierCode, supplierProductId },
-        },
+      const saved = await saveMapping({
+        supplierCode,
+        supplierProductId,
+        vlProductId: match.id,
+        displayName: match.name,
       });
+      if (!saved.ok) return;
 
-      await prisma.productMapping.upsert({
-        where: {
-          supplierCode_supplierProductId: { supplierCode, supplierProductId },
-        },
-        update: { vlProductId: match.id, displayName: match.name },
-        create: { supplierCode, supplierProductId, vlProductId: match.id, displayName: match.name },
-      });
-
-      const action = existing ? 'diperbarui' : 'dibuat';
+      const action = saved.created ? 'dibuat' : 'diperbarui';
       await ctx.reply(
         `✅ <b>Mapping ${action} (berdasarkan nama)!</b>\n\n` +
         `• <b>Supplier:</b> <code>${escapeHtml(supplierCode)}</code>\n` +
         `• <b>Produk Supplier:</b> <code>${escapeHtml(supplierProductId)}</code>\n` +
         `• <b>Produk VendingLink:</b> <b>${escapeHtml(match.name)}</b> (<code>${escapeHtml(match.id)}</code>)\n\n` +
+        `${syncNote(saved)}\n\n` +
         `🚀 Beli sekarang:\n<code>/buy ${escapeHtml(supplierCode)} ${escapeHtml(supplierProductId)}</code>`,
         { parse_mode: 'HTML' }
       );
@@ -455,26 +524,30 @@ export const mapController = async (ctx: MyContext, command: ParsedCommand) => {
     }
 
     // If no match found by name, treat target as raw vlProductId (exact ID)
-    const existing = await prisma.productMapping.findUnique({
-      where: {
-        supplierCode_supplierProductId: { supplierCode, supplierProductId },
-      },
+    const saved = await saveMapping({
+      supplierCode,
+      supplierProductId,
+      vlProductId: target,
+      verifyCatalog: true,
     });
 
-    await prisma.productMapping.upsert({
-      where: {
-        supplierCode_supplierProductId: { supplierCode, supplierProductId },
-      },
-      update: { vlProductId: target },
-      create: { supplierCode, supplierProductId, vlProductId: target },
-    });
+    if (!saved.ok) {
+      await ctx.reply(
+        saved.reason === 'not_in_catalog'
+          ? `❌ <b>Produk tidak ditemukan</b> di katalog aktif VendingLink: <code>${escapeHtml(target)}</code>\nMapping tidak disimpan. Cek ID-nya, atau gunakan <code>/map list</code>.`
+          : `⚠️ <b>Storefront tidak dapat dihubungi</b>, ID tidak bisa diverifikasi.\nMapping tidak disimpan. Silakan coba lagi.`,
+        { parse_mode: 'HTML' }
+      );
+      return;
+    }
 
-    const action = existing ? 'diperbarui' : 'dibuat';
+    const action = saved.created ? 'dibuat' : 'diperbarui';
     await ctx.reply(
       `✅ <b>Mapping ${action}!</b>\n\n` +
       `• <b>Supplier:</b> <code>${escapeHtml(supplierCode)}</code>\n` +
       `• <b>Produk Supplier:</b> <code>${escapeHtml(supplierProductId)}</code>\n` +
       `• <b>VendingLink Product ID:</b> <code>${escapeHtml(target)}</code>\n\n` +
+      `${syncNote(saved)}\n\n` +
       `🚀 Beli sekarang:\n<code>/buy ${escapeHtml(supplierCode)} ${escapeHtml(supplierProductId)}</code>`,
       { parse_mode: 'HTML' }
     );
@@ -514,14 +587,62 @@ export const handleTextMessage = async (ctx: MyContext) => {
   if (text.startsWith('/cancel')) {
     ctx.session.state = undefined;
     ctx.session.pendingBuy = undefined;
+    ctx.session.resumeBuy = undefined;
+    ctx.session.pendingList = undefined;
     await ctx.reply('Operation cancelled.');
     return;
   }
 
-  // Must be a command
-  if (!text.startsWith('/')) {
-    await ctx.reply('Unrecognized input. Send a command like /help.');
+  const list = ctx.session.pendingList;
+
+  // A number typed on a product card is its quantity
+  if (ctx.session.state === 'AWAITING_QTY' && !text.startsWith('/')) {
+    const index = list?.selectedIndex;
+    if (!isListActive(list) || index === undefined) {
+      ctx.session.state = undefined;
+      await ctx.reply('Daftar produk sudah kedaluwarsa. Jalankan /list lagi.');
+      return;
+    }
+    const qty = /^\d{1,4}$/.test(text.trim()) ? parseInt(text.trim(), 10) : NaN;
+    if (isNaN(qty) || qty < 1 || qty > env.MAX_BUY_QTY) {
+      await ctx.reply(`Ketik jumlah antara 1 dan ${env.MAX_BUY_QTY}, atau /cancel.`);
+      return;
+    }
+    await buyPreCheck(ctx, list.supplierCode, list.items[index].id, qty);
     return;
+  }
+
+  // Must be a command, unless it is a pick from the active list
+  if (!text.startsWith('/')) {
+    const pick = isListActive(list) ? parseListInput(text) : null;
+    if (!list || !pick) {
+      await ctx.reply('Unrecognized input. Send a command like /help.');
+      return;
+    }
+
+    const item = list.items[pick.index];
+    if (!item) {
+      await ctx.reply(`Nomor harus antara 1 dan ${list.items.length}.`);
+      return;
+    }
+    if (!item.inStock) {
+      await ctx.reply(`❌ ${item.name} sedang habis.`);
+      return;
+    }
+    if (pick.qty === undefined) {
+      await showProductCard(ctx, pick.index, 'reply');
+      return;
+    }
+    if (pick.qty < 1 || pick.qty > env.MAX_BUY_QTY) {
+      await ctx.reply(`Ketik jumlah antara 1 dan ${env.MAX_BUY_QTY}.`);
+      return;
+    }
+    await buyPreCheck(ctx, list.supplierCode, item.id, pick.qty);
+    return;
+  }
+
+  if (ctx.session.state === 'AWAITING_QTY') {
+    ctx.session.state = undefined;
   }
 
   const { command, error } = parseCommand(text);
@@ -711,7 +832,7 @@ export const handleTextMessage = async (ctx: MyContext) => {
         await ctx.reply(
           '🤖 <b>VendingLink Bridge</b>\n\n' +
           'Commands:\n' +
-          '• <code>/list &lt;SUPPLIER&gt; [search]</code> - List products\n' +
+          '• <code>/list &lt;SUPPLIER&gt; [search]</code> - List products, lalu tap/ketik nomornya untuk beli (<code>3</code> atau <code>3 x2</code>)\n' +
           '• <code>/buy &lt;SUPPLIER&gt; &lt;PRODUCT_ID&gt; [QTY] [emails]</code> - Buy products\n' +
           '• <code>/balance [SUPPLIER|ALL]</code> - Check balances across suppliers\n' +
           '• <code>/suppliers</code> - List dynamic and built-in suppliers\n' +

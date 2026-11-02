@@ -305,6 +305,15 @@ Response sinkron (200 OK):
 
 Bridge segera membuat transaksi di database, memotong saldo/membeli produk dari supplier terbaik, dan mendistribusikan lisensi kembali ke storefront via webhook `POST /api/bridge/webhook/stock/topup`.
 
+Konfirmasi bisa ditolak oleh gate mapping. Tidak ada pembelian yang dibuat, status request tetap `FOUND`, dan konfirmasi boleh diulang:
+
+| HTTP | `reason` | Arti |
+|------|----------|------|
+| 409 | `unmapped`, `disabled`, `not_synced`, `not_in_catalog` | Produk menunggu mapping oleh admin |
+| 503 | `storefront_unavailable` | Bridge tidak bisa memvalidasi produk ke storefront |
+
+Storefront wajib menampilkan pesan "sedang diproses" ke customer, bukan menganggap pesanan gagal permanen. Mapping bisa belum ada karena `FOUND` dikirim ke customer bersamaan dengan permintaan persetujuan ke admin.
+
 ### 5.5 customerRef adalah Opaque ID
 
 `customerRef` tidak boleh berisi nomor HP, nama, atau data identitas lain.

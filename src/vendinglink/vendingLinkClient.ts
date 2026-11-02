@@ -151,6 +151,42 @@ export const fetchVendingLinkProducts = async (
   return lastResult;
 };
 
+const CATALOG_LOOKUP_LIMIT = 500;
+
+export type StorefrontLookup =
+  | { status: 'found'; product: VendingLinkProduct }
+  | { status: 'not_found' }
+  | { status: 'unavailable'; error: string };
+
+// Deliberately has no fallback URL: a purchase gate must not validate against another environment.
+// The Bridge API has no lookup by ID yet, so this scans the catalog; a full page without a match
+// is inconclusive rather than "not found".
+export const getVendingLinkProductById = async (id: string): Promise<StorefrontLookup> => {
+  try {
+    const { data } = await axios.get(`${env.VENDINGLINK_URL}/api/bridge/products`, {
+      params: { limit: CATALOG_LOOKUP_LIMIT },
+      headers: { Authorization: `Bearer ${env.BRIDGE_SECRET_KEY}` },
+      timeout: 8000,
+    });
+
+    if (!data || !Array.isArray(data.products)) {
+      return { status: 'unavailable', error: 'Invalid catalog response' };
+    }
+
+    const product = data.products.find((p: VendingLinkProduct) => p.id === id);
+    if (product) return { status: 'found', product };
+
+    if (data.products.length >= CATALOG_LOOKUP_LIMIT) {
+      return { status: 'unavailable', error: 'Catalog exceeds lookup limit' };
+    }
+    return { status: 'not_found' };
+  } catch (err: any) {
+    const error = err?.response?.data?.error || err?.message || 'Network connection failed';
+    logger.warn({ id, error }, 'Failed to look up VendingLink product');
+    return { status: 'unavailable', error };
+  }
+};
+
 export interface SyncMappingResult {
   success: boolean;
   error?: string;
